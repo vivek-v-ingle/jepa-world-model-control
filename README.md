@@ -31,9 +31,10 @@ graph LR
         Tracker["Adaptive Goal Tracker"]
     end
 
-    subgraph "Robot Actuation (jepa_control/robot)"
+    subgraph "Perception & Robot (jepa_control/)"
+        Camera["ZED / USB Camera Stream"]
         Driver["Fairino Driver (RPC / MoveL)"]
-        Gripper["Modbus Gripper"]
+        Vis["Dual-Mode Visualizer (GUI / MP4)"]
     end
 
     Demo & Obs --> Encoder
@@ -42,8 +43,9 @@ graph LR
     Tracker --> CEM
     Proprio & Obs --> WorldModel
     WorldModel <--> CEM
+    Camera --> Obs
     CEM --> Driver
-    Driver --> Gripper
+    Driver --> Vis
 ```
 
 ---
@@ -58,11 +60,17 @@ jepa-world-model-control/
 ├── jepa_control/
 │   ├── models/                    # Core JEPA neural networks (V-JEPA, Dreamer, AC-Predictor)
 │   ├── planner/                   # Latent-space Cross-Entropy Method optimizer
-│   ├── perception/                # Image preprocessing, patch extraction & transforms
+│   ├── perception/                # ZED/USB Camera streaming, image preprocessing & transforms
+│   │   ├── camera.py              # Native PyZED / OpenCV camera interface
+│   │   └── transforms.py          # Patch tokenization and ImageNet normalization
 │   ├── robot/                     # Fairino FR10 XML-RPC driver with Dry-Run / Mock mode
-│   └── pipeline/                  # Closed-loop execution engine
+│   │   ├── base_robot.py          # Abstract robot interface
+│   │   └── fairino_driver.py      # Production Fairino RPC driver
+│   └── pipeline/                  # Closed-loop execution engine & visualizer
+│       ├── policy_runner.py       # End-to-end execution pipeline
+│       └── visualizer.py          # Real-time multi-panel HUD & MP4 recorder
 ├── scripts/
-│   ├── run_offline_rollout.py     # Offline demonstration replay & action generation
+│   ├── run_offline_rollout.py     # Unified policy execution script (Mock / Live + ZED)
 │   └── test_fairino_dry_run.py    # Hardware test & mock validation script
 ├── pyproject.toml
 └── requirements.txt
@@ -70,41 +78,73 @@ jepa-world-model-control/
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Installation & Quickstart
 
-### 1. Installation
+### 1. Clone the Repository
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/jepa-world-model-control.git
+git clone https://github.com/vivek-v-ingle/jepa-world-model-control.git
 cd jepa-world-model-control
+```
 
-# Create & activate environment
+### 2. Environment Setup
+
+#### Option A: Standard Python Virtual Environment (`venv` + `pip`)
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Offline Simulation / Mock Verification
-You can test the entire pipeline without physical robot hardware using mock mode:
+#### Option B: Fast Setup using `uv`
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+uv pip install -e .
+```
+
+---
+
+## 💻 Running the Pipeline
+
+### Mode 1: Offline Simulation / Hardware-Free Testing
+Test the complete JEPA goal inference and CEM planning pipeline without physical hardware:
 ```bash
 # Test the Fairino driver in simulated dry-run mode
 python scripts/test_fairino_dry_run.py --mock
 
-# Run end-to-end latent planning on a recorded demonstration
-python scripts/run_offline_rollout.py --config config/deploy_config.yaml
+# Run end-to-end latent planning and save execution video
+python scripts/run_offline_rollout.py --config config/deploy_config.yaml --max_steps 5 --save_video rollout_demo.mp4
 ```
 
-### 3. Physical Lab Deployment (Fairino FR10)
-Connect the control PC to the Fairino controller (`192.168.57.2`):
-```bash
-# Test live robot connection
-python scripts/test_fairino_dry_run.py --ip 192.168.57.2
+---
 
-# Run visual imitation policy
-python scripts/run_offline_rollout.py --config config/deploy_config.yaml --live
+### Mode 2: Live Fairino Robot + Live ZED Camera (In the Lab)
+
+Connect your workstation to the Fairino controller (`192.168.57.2`) and plug in the ZED Camera:
+
+#### A. Test Live Robot Connection:
+```bash
+python scripts/test_fairino_dry_run.py --live --ip 192.168.57.2
+```
+
+#### B. Run Visual Imitation with Live GUI on Monitor:
+```bash
+python scripts/run_offline_rollout.py \
+  --config config/deploy_config.yaml \
+  --live \
+  --camera zed \
+  --visualize
+```
+
+#### C. Run Visual Imitation Headlessly (Over SSH with Video Logging):
+```bash
+python scripts/run_offline_rollout.py \
+  --config config/deploy_config.yaml \
+  --live \
+  --camera zed \
+  --save_video rollout_experiment_01.mp4
 ```
 
 ---
