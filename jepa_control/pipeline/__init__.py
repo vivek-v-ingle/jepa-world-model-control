@@ -1,1 +1,2 @@
 from jepa_control.pipeline.policy_runner import JEPAPolicyRunner
+from jepa_control.pipeline.visualizer import PolicyVisualizer
