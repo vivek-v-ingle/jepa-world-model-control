@@ -1,0 +1,34 @@
+# Fairino FR10 Robot and Safety Limits Configuration
+
+robot:
+  controller_ip: "192.168.57.2"
+  tool_id: 2
+  user_frame_id: 0
+  default_speed: 10.0          # MoveL velocity percentage (0-100)
+  point_step: 4                # Subsampling factor for waypoints
+  start_method: "staged"       # Choices: "movel", "movej", "staged"
+  safe_z_mm: 50.0
+
+safety_limits:
+  min_z_mm: -300.0
+  max_z_mm: 1200.0
+  min_x_mm: -1000.0
+  max_x_mm: 1000.0
+  min_y_mm: -1000.0
+  max_y_mm: 1000.0
+  max_cartesian_step_mm: 100.0 # Maximum allowed delta per step
+
+gripper:
+  gripper_index: 1
+  open_pos: 50
+  close_pos: 90
+  vel: 30
+  force: 40
+  max_time_ms: 3000
+
+camera:
+  camera_index: 0
+  width: 640
+  height: 480
+  fps: 30
+  crop_size: 256

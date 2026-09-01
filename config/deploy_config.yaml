@@ -1,0 +1,65 @@
+# Deploy and Latent Planning Configuration
+
+meta:
+  dtype: bfloat16
+  pretrain_checkpoint: /home/vvijaykumar/Demo-JEPA/exp/vjepa_2_1_dreamer_ac/latest.pt
+  dreamer_predictor_checkpoint: /home/vvijaykumar/Demo-JEPA/exp/vjepa_2_1_dreamer_predictor/latest.pt
+  context_encoder_key: target_encoder
+  target_encoder_key: target_encoder
+  seed: 42
+  use_sdpa: true
+
+model:
+  model_name: vit_giant_xformers
+  pred_depth: 24
+  pred_embed_dim: 1024
+  pred_is_frame_causal: true
+  pred_num_heads: 16
+  uniform_power: true
+  use_extrinsics: false
+  has_cls_first: false
+  img_temporal_dim_size: 1
+  interpolate_rope: true
+  lambda_progressive: false
+  lambda_value_img: 0.5
+  lambda_value_vid: 0.5
+  modality_embedding: true
+  n_registers: 0
+  normalize_predictor: false
+  use_activation_checkpointing: true
+  use_mask_tokens: true
+  use_rope: true
+  zero_init_mask_tokens: true
+  wide_silu: true
+  compile_model: false
+
+data:
+  crop_size: 256
+  patch_size: 16
+  tubelet_size: 2
+
+loss:
+  normalize_reps: true
+  auto_steps: 1
+
+planner:
+  l1_threshold: 1.0
+  queue_horizon: 4
+  max_steps: 10
+  abs_gripper: true
+  discrete_gripper: false
+  mpc:
+    rollout: 1
+    samples: 200
+    topk: 10
+    cem_steps: 50
+    momentum_mean: 0.15
+    momentum_std: 0.75
+    maxnorm: 0.1
+    verbose: false
+
+reference:
+  reference_h5: /home/vvijaykumar/Demo-JEPA/data/pick_place/sawyer/episode_0.h5
+  image_key: observations/images/camera_front
+  ref_data_fps: 30
+  ref_target_fps: 5
