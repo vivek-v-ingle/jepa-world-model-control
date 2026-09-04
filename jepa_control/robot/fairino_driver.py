@@ -475,9 +475,25 @@ class FairinoDriver(BaseRobot):
         speed: Optional[float] = None,
     ) -> bool:
         """
-        Execute one MoveL command.
+        Execute one Cartesian MoveL command.
 
-        This is the lowest-level physical motion function.
+        The Fairino SDK used by this project has the signature:
+
+            MoveL(
+                desc_pos,
+                tool,
+                user,
+                joint_pos,
+                vel,
+                acc,
+                ovl,
+                blendR,
+                blendMode,
+                ...
+            )
+
+        Passing the joint position explicitly is important because the
+        fourth positional argument is NOT velocity.
         """
 
         target_pose = np.asarray(
@@ -524,21 +540,43 @@ class FairinoDriver(BaseRobot):
         )
 
         try:
-            # Fairino MoveL convention:
-            # MoveL(desc_pos, tool, user, vel, acc, ovl, ...)
-            #
-            # The repository's existing SDK is used directly.
+            # Six zeros tell the Fairino SDK to calculate the joint
+            # solution automatically using inverse kinematics.
+            joint_pos = [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ]
+
             ret = self.robot.MoveL(
-                target_pose[:6].tolist(),
-                self.tool_id,
-                self.user_frame_id,
-                move_speed,
-                0.0,
-                100.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
+                desc_pos=target_pose[:6].tolist(),
+                tool=self.tool_id,
+                user=self.user_frame_id,
+                joint_pos=joint_pos,
+                vel=move_speed,
+                acc=0.0,
+                ovl=100.0,
+                blendR=-1.0,
+                blendMode=0,
+                exaxis_pos=[0.0, 0.0, 0.0, 0.0],
+                search=0,
+                offset_flag=0,
+                offset_pos=[
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                oacc=100.0,
+                config=-1,
+                velAccParamMode=0,
+                overSpeedStrategy=0,
+                speedPercent=10,
             )
 
             if ret != 0:
@@ -553,38 +591,6 @@ class FairinoDriver(BaseRobot):
             )
 
             return True
-
-        except TypeError:
-            # Some Fairino SDK versions expose a shorter MoveL signature.
-            try:
-                ret = self.robot.MoveL(
-                    target_pose[:6].tolist(),
-                    self.tool_id,
-                    self.user_frame_id,
-                    move_speed,
-                    0.0,
-                    100.0,
-                )
-
-                if ret != 0:
-                    logger.error(
-                        "[ROBOT] MoveL failed with error code: %s",
-                        ret,
-                    )
-                    return False
-
-                logger.info(
-                    "[ROBOT] MoveL command accepted."
-                )
-
-                return True
-
-            except Exception as exc:
-                logger.exception(
-                    "[ROBOT] MoveL failed: %s",
-                    exc,
-                )
-                return False
 
         except Exception as exc:
             logger.exception(
