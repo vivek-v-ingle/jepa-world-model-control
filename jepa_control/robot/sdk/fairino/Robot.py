@@ -2303,12 +2303,16 @@ class RPC():
         self.robot_state_pkg = RobotStatePkg()
 
         self.stop_event = threading.Event()
-        # 禁用20004端口（已用20005 CNDE完全取代）
-        # self.connect_to_robot()
-        # thread = threading.Thread(target=self.robot_state_routine_thread)
-        # thread.daemon = True
-        # thread.start()
-        # time.sleep(1)
+        # Connect to legacy Fairino state stream on TCP 20004
+        if not self.connect_to_robot():
+            print("无法连接机器人状态端口 20004")
+        else:
+            self.thread = threading.Thread(
+                target=self.robot_state_routine_thread,
+                daemon=True
+            )
+            self.thread.start()
+            time.sleep(1)
         print(self.robot)
 
         # 创建UDP客户端（内部实现）
@@ -2353,13 +2357,19 @@ class RPC():
             socket.setdefaulttimeout(None)
             self.robot = xmlrpc.client.ServerProxy(link)
         
-        # 只有CNDE和XML-RPC都成功才设置is_connect = True
-        if cnde_ok and xmlrpc_ok:
+        # Legacy FR10 uses TCP 20004 for robot state.
+        # CNDE 20005 is not required when the 20004 state stream is active.
+        state_ok = self.sock_cli_state_state
+
+        if state_ok and xmlrpc_ok:
             RPC.is_connect = True
-            print("[调试] RPC连接完全成功，is_connect = True")
+            print("[调试] RPC连接成功 (20004 state + XML-RPC)，is_connect = True")
         else:
             RPC.is_connect = False
-            print(f"[调试] RPC连接失败 (CNDE:{cnde_ok}, XML-RPC:{xmlrpc_ok})，is_connect = False")
+            print(
+                f"[调试] RPC连接失败 "
+                f"(20004:{state_ok}, XML-RPC:{xmlrpc_ok})，is_connect = False"
+            )
         
         self.robot = xmlrpc.client.ServerProxy(link)
 
@@ -2396,14 +2406,34 @@ class RPC():
             return current
 
     def connect_to_robot(self):
-        """连接到机器人CNDE端口(20005)"""
-        if self._cnde_client is None:
-            return False
+        """Connect to the legacy Fairino robot state stream on TCP port 20004."""
         try:
-            rtn = self._cnde_client.connect(self.ip_address, self.ROBOT_CNDE_PORT)
-            return rtn == 0
+            if self.sock_cli_state is not None:
+                try:
+                    self.sock_cli_state.close()
+                except Exception:
+                    pass
+
+            self.sock_cli_state = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock_cli_state.settimeout(3.0)
+            self.sock_cli_state.connect((self.ip_address, 20004))
+            self.sock_cli_state.settimeout(None)
+
+            self.sock_cli_state_state = True
+            print(f"Legacy robot state connection successful: {self.ip_address}:20004")
+            return True
+
         except Exception as ex:
-            print(f"CNDE连接失败: {ex}")
+            self.sock_cli_state_state = False
+            print(f"Legacy robot state connection failed: {ex}")
+
+            if self.sock_cli_state is not None:
+                try:
+                    self.sock_cli_state.close()
+                except Exception:
+                    pass
+
+            self.sock_cli_state = None
             return False
         
     def SetReConnectParam(self, enable: bool, maxRetries: int, period: int) -> int:
@@ -2453,112 +2483,113 @@ class RPC():
         self.SDK_state = False
         return False
 
-    # def robot_state_routine_thread(self):
-    #     """处理机器人状态数据包的线程例程"""
+    def robot_state_routine_thread(self):
+        """处理机器人状态数据包的线程例程"""
 
-    #     while not self.closeRPC_state:
-    #         recvbuf = bytearray(self.BUFFER_SIZE)
-    #         tmp_recvbuf = bytearray(self.BUFFER_SIZE)
-    #         state_pkg = bytearray(self.BUFFER_SIZE)
-    #         find_head_flag = False
-    #         index = 0
-    #         length = 0
-    #         tmp_len = 0
-    #         expected_length = self.BUFFER_SIZE  # 初始期望接收长度
+        while not self.closeRPC_state:
+            recvbuf = bytearray(self.BUFFER_SIZE)
+            tmp_recvbuf = bytearray(self.BUFFER_SIZE)
+            state_pkg = bytearray(self.BUFFER_SIZE)
+            find_head_flag = False
+            index = 0
+            length = 0
+            tmp_len = 0
+            expected_length = self.BUFFER_SIZE  # 初始期望接收长度
 
-    #         try:
-    #             while not self.robot_realstate_exit and not self.stop_event.is_set():
-    #                 recvbyte = self.sock_cli_state.recv_into(recvbuf)
-    #                 # print(f"接收机器人状态字节 {recvbyte}")
-    #                 # print("Python 结构体大小:", sizeof(self.robot_state_pkg))
-    #                 if recvbyte <= 0:
-    #                     self.sock_cli_state.close()
-    #                     print("接收机器人状态字节 -1")
-    #                     if not self.reconnect():
-    #                         return
-    #                     continue
+            try:
+                while not self.robot_realstate_exit and not self.stop_event.is_set():
+                    recvbyte = self.sock_cli_state.recv_into(recvbuf)
+                    # print(f"接收机器人状态字节 {recvbyte}")
+                    # print("Python 结构体大小:", sizeof(self.robot_state_pkg))
+                    if recvbyte <= 0:
+                        self.sock_cli_state.close()
+                        print("接收机器人状态字节 -1")
+                        if not self.reconnect():
+                            return
+                        continue
 
-    #                 # 处理临时缓冲区数据
-    #                 if tmp_len > 0:
-    #                     if tmp_len + recvbyte <= self.BUFFER_SIZE:
-    #                         recvbuf[:tmp_len + recvbyte] = tmp_recvbuf[:tmp_len] + recvbuf[:recvbyte]
-    #                         recvbyte += tmp_len
-    #                         tmp_len = 0
-    #                     else:
-    #                         tmp_len = 0
+                    # 处理临时缓冲区数据
+                    if tmp_len > 0:
+                        if tmp_len + recvbyte <= self.BUFFER_SIZE:
+                            recvbuf[:tmp_len + recvbyte] = tmp_recvbuf[:tmp_len] + recvbuf[:recvbyte]
+                            recvbyte += tmp_len
+                            tmp_len = 0
+                        else:
+                            tmp_len = 0
 
-    #                 i = 0
-    #                 while i < recvbyte:
-    #                     # 查找包头
-    #                     if format(recvbuf[i], '02X') == "5A" and not find_head_flag:
-    #                         if i + 4 < recvbyte and format(recvbuf[i + 1], '02X') == "5A":
-    #                             find_head_flag = True
-    #                             state_pkg[0] = recvbuf[i]
-    #                             index = 1
-    #                             length = (recvbuf[i + 4] << 8) | recvbuf[i + 3]
+                    i = 0
+                    while i < recvbyte:
+                        # 查找包头
+                        if format(recvbuf[i], '02X') == "5A" and not find_head_flag:
+                            if i + 4 < recvbyte and format(recvbuf[i + 1], '02X') == "5A":
+                                find_head_flag = True
+                                state_pkg[0] = recvbuf[i]
+                                index = 1
+                                length = (recvbuf[i + 4] << 8) | recvbuf[i + 3]
 
-    #                             #检查长度是否超过预期
-    #                             if length + 7 > expected_length:
-    #                                 expected_length = length + 7
-    #                                 # 需要接收更多数据
-    #                                 tmp_recvbuf[:recvbyte - i] = recvbuf[i:recvbyte]
-    #                                 tmp_len = recvbyte - i
-    #                                 find_head_flag = False
-    #                                 break
+                                #检查长度是否超过预期
+                                if length + 7 > expected_length:
+                                    expected_length = length + 7
+                                    # 需要接收更多数据
+                                    tmp_recvbuf[:recvbyte - i] = recvbuf[i:recvbyte]
+                                    tmp_len = recvbyte - i
+                                    find_head_flag = False
+                                    break
 
-    #                             i += 1
-    #                         else:
-    #                             i += 1
-    #                             continue
+                                i += 1
+                            else:
+                                i += 1
+                                continue
 
-    #                     # 已找到包头，收集数据
-    #                     elif find_head_flag and index < length + 5:
-    #                         if i >= recvbyte:
-    #                             break
+                        # 已找到包头，收集数据
+                        elif find_head_flag and index < length + 5:
+                            if i >= recvbyte:
+                                break
 
-    #                         state_pkg[index] = recvbuf[i]
-    #                         index += 1
-    #                         i += 1
+                            state_pkg[index] = recvbuf[i]
+                            index += 1
+                            i += 1
 
-    #                     # 检查校验和
-    #                     elif find_head_flag and index >= length + 5:
-    #                         if i + 1 < recvbyte:
-    #                             checksum = sum(state_pkg[:index])
-    #                             checkdata = (recvbuf[i + 1] << 8) | recvbuf[i]
+                        # 检查校验和
+                        elif find_head_flag and index >= length + 5:
+                            if i + 1 < recvbyte:
+                                checksum = sum(state_pkg[:index])
+                                checkdata = (recvbuf[i + 1] << 8) | recvbuf[i]
 
-    #                             if checksum == checkdata:
-    #                                 self.robot_state_pkg = RobotStatePkg.from_buffer_copy(state_pkg[:sizeof(self.robot_state_pkg)])
+                                if checksum == checkdata:
+                                    self.robot_state_pkg = RobotStatePkg.from_buffer_copy(state_pkg[:sizeof(self.robot_state_pkg)])
 
-    #                                 # print(f"@@@@@@{self.robot_state_pkg.toolCoord[0]}")
-    #                                 find_head_flag = False
-    #                                 index = 0
-    #                                 length = 0
-    #                                 expected_length = self.BUFFER_SIZE  # 重置期望长度
-    #                                 i += 2
-    #                             else:
-    #                                 # 校验失败处理
-    #                                 self.robot_state_pkg.jt_cur_pos[0] = 0
-    #                                 self.robot_state_pkg.jt_cur_pos[1] = 0
-    #                                 self.robot_state_pkg.jt_cur_pos[2] = 0
-    #                                 find_head_flag = False
-    #                                 index = 0
-    #                                 length = 0
-    #                                 i += 2
-    #                         else:
-    #                             # 数据不足，保存到临时缓冲区
-    #                             tmp_recvbuf[:recvbyte - i] = recvbuf[i:recvbyte]
-    #                             tmp_len = recvbyte - i
-    #                             break
-    #                     else:
-    #                         i += 1
+                                    # print(f"@@@@@@{self.robot_state_pkg.toolCoord[0]}")
+                                    find_head_flag = False
+                                    index = 0
+                                    length = 0
+                                    expected_length = self.BUFFER_SIZE  # 重置期望长度
+                                    i += 2
+                                else:
+                                    # 校验失败处理
+                                    self.robot_state_pkg.jt_cur_pos[0] = 0
+                                    self.robot_state_pkg.jt_cur_pos[1] = 0
+                                    self.robot_state_pkg.jt_cur_pos[2] = 0
+                                    find_head_flag = False
+                                    index = 0
+                                    length = 0
+                                    i += 2
+                            else:
+                                # 数据不足，保存到临时缓冲区
+                                tmp_recvbuf[:recvbyte - i] = recvbuf[i:recvbyte]
+                                tmp_len = recvbyte - i
+                                break
+                        else:
+                            i += 1
 
-    #         except Exception as ex:
-    #             if not self.closeRPC_state:
-    #                 self.sock_cli_state.close()
-    #                 self.sock_cli_state_state = False
-    #                 self.SDK_state = False
-    #                 # print("SDK读取机器人实时数据失败", ex)
-    #                 self.reconnect()
+            except Exception as ex:
+                if not self.closeRPC_state:
+                    self.sock_cli_state.close()
+                    self.sock_cli_state_state = False
+                    self.SDK_state = False
+                    # print("SDK读取机器人实时数据失败", ex)
+                    self.reconnect()
+
 
     # ==================== CNDE公共接口 ====================
     def CNDESetStateConfig(self, states: List[RobotState], period: int) -> int:
