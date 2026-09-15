@@ -55,8 +55,8 @@ planner:
     samples: 60
     topk: 8
     cem_steps: 10
-    momentum_mean: 0.15
-    momentum_std: 0.75
+    momentum_mean: 0.60
+    momentum_std: 0.35
     maxnorm: 0.1
     verbose: false
 
