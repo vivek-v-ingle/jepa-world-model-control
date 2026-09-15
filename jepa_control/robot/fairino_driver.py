@@ -787,9 +787,6 @@ class FairinoDriver(BaseRobot):
         # Apply gripper command (non-fatal if unconfigured/unsupported)
         self.set_gripper(gripper_cmd)
 
-        # Wait for physical MoveL motion to complete so RobotState transitions back to 1 (stopped)
-        self.wait_for_motion_completion(timeout_sec=3.0)
-
         return True
 
     # -----------------------------------------------------------------------
