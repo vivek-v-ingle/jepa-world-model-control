@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--camera", type=str, default="mock", choices=["mock", "zed", "usb", "auto"], help="Camera stream source")
     parser.add_argument("--visualize", action="store_true", help="Enable HUD visualization display")
     parser.add_argument("--save_video", type=str, default=None, help="Path to save MP4 execution video (e.g. rollout.mp4)")
+    parser.add_argument("--rotate_camera", type=int, default=0, choices=[0, 90, 180, 270], help="Rotate live camera image by N degrees (e.g. 180)")
     args = parser.parse_args()
 
     # 1. Load Configurations
@@ -90,6 +91,14 @@ def main():
             if not ret or obs_frame is None:
                 logger.warning("Failed to grab camera frame. Reusing previous frame.")
                 obs_frame = curr_ref.copy()
+            elif args.rotate_camera != 0:
+                import cv2
+                if args.rotate_camera == 180:
+                    obs_frame = cv2.rotate(obs_frame, cv2.ROTATE_180)
+                elif args.rotate_camera == 90:
+                    obs_frame = cv2.rotate(obs_frame, cv2.ROTATE_90_CLOCKWISE)
+                elif args.rotate_camera == 270:
+                    obs_frame = cv2.rotate(obs_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         else:
             obs_frame = curr_ref.copy()
 
