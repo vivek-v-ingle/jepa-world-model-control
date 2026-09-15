@@ -24,6 +24,32 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(
 logger = logging.getLogger("ZED3D_PickPlace")
 
 
+def move_to_xyz(driver: FairinoDriver, target_x: float, target_y: float, target_z: float, gripper_val: float = 0.0, max_step_mm: float = 40.0):
+    """Smoothly steps the robot towards the target 3D Cartesian position without clipping errors."""
+    target_xyz = np.array([target_x, target_y, target_z], dtype=np.float32)
+    for _ in range(25):
+        curr_pose = driver.get_tcp_pose()
+        delta = target_xyz - curr_pose[:3]
+        dist = float(np.linalg.norm(delta))
+        if dist < 15.0:  # Reached within 15mm of target
+            break
+
+        step_len = min(dist, max_step_mm)
+        step_dir = delta / (dist + 1e-6)
+        step_delta = step_dir * step_len
+
+        # Action vector: [dx, dy, dz, drx, dry, drz, gripper]
+        action_7d = [
+            float(step_delta[0] / 120.0),
+            float(step_delta[1] / 120.0),
+            float(-step_delta[2] / 220.0),
+            0.0, 0.0, 0.0,
+            float(gripper_val)
+        ]
+        driver.step_action(action_7d)
+        time.sleep(0.3)
+
+
 def main():
     parser = argparse.ArgumentParser(description="ZED 3D Direct Object Detection & Pick-and-Place")
     parser.add_argument("--ip", type=str, default="192.168.57.2", help="Fairino robot controller IP")
@@ -96,21 +122,13 @@ def main():
 
         # Step B: Hover / Approach over Object
         logger.info(f"\n--- Phase 1: Approaching Hover Pose over Object ({obj_x:.1f}, {obj_y:.1f}, 450.0) ---")
-        hover_pose = np.array([obj_x, obj_y, 450.0, 174.28, 3.93, -11.69, 0.0], dtype=np.float32)
-        curr_pose = driver.get_tcp_pose()
-        delta_hover = hover_pose[:3] - curr_pose[:3]
-        action_hover = [delta_hover[0] / 120.0, delta_hover[1] / 120.0, -delta_hover[2] / 220.0, 0.0, 0.0, 0.0, 0.0]
-        driver.step_action(action_hover)
-        time.sleep(1.5)
+        move_to_xyz(driver, obj_x, obj_y, 450.0, gripper_val=0.0)
+        time.sleep(1.0)
 
         # Step C: Descend & Clamp
         logger.info(f"\n--- Phase 2: Descending to Grasp Height ({obj_x:.1f}, {obj_y:.1f}, 270.0) ---")
-        grasp_pose = np.array([obj_x, obj_y, 270.0, 174.28, 3.93, -11.69, 1.0], dtype=np.float32)
-        curr_pose = driver.get_tcp_pose()
-        delta_grasp = grasp_pose[:3] - curr_pose[:3]
-        action_grasp = [delta_grasp[0] / 120.0, delta_grasp[1] / 120.0, -delta_grasp[2] / 220.0, 0.0, 0.0, 0.0, 1.0]
-        driver.step_action(action_grasp)
-        time.sleep(1.5)
+        move_to_xyz(driver, obj_x, obj_y, 270.0, gripper_val=1.0)
+        time.sleep(1.0)
 
         logger.info("Closing JODELL RG Gripper on Object...")
         driver.set_gripper(1.0) # Close gripper
@@ -118,18 +136,14 @@ def main():
 
         # Step D: Lift Object
         logger.info("\n--- Phase 3: Lifting Object (Z=480.0 mm) ---")
-        lift_action = [0.0, 0.0, -210.0 / 220.0, 0.0, 0.0, 0.0, 1.0]
-        driver.step_action(lift_action)
-        time.sleep(1.5)
+        curr_p = driver.get_tcp_pose()
+        move_to_xyz(driver, curr_p[0], curr_p[1], 480.0, gripper_val=1.0)
+        time.sleep(1.0)
 
         # Step E: Transfer to Goal Box & Release
         logger.info(f"\n--- Phase 4: Transferring to Goal Dropoff ({args.goal_x}, {args.goal_y}) ---")
-        curr_pose = driver.get_tcp_pose()
-        goal_pose = np.array([args.goal_x, args.goal_y, 300.0, 174.28, 3.93, -11.69, 0.0], dtype=np.float32)
-        delta_goal = goal_pose[:3] - curr_pose[:3]
-        action_goal = [delta_goal[0] / 120.0, delta_goal[1] / 120.0, -delta_goal[2] / 220.0, 0.0, 0.0, 0.0, 0.0]
-        driver.step_action(action_goal)
-        time.sleep(2.0)
+        move_to_xyz(driver, args.goal_x, args.goal_y, 350.0, gripper_val=1.0)
+        time.sleep(1.5)
 
         logger.info("Opening Gripper to Release Object...")
         driver.set_gripper(0.0)
