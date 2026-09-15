@@ -45,7 +45,7 @@ loss:
   auto_steps: 1
 
 planner:
-  l1_threshold: 1.0
+  l1_threshold: 0.65
   queue_horizon: 4
   max_steps: 10
   abs_gripper: true

@@ -698,8 +698,13 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        dx, dy, dz = action[:3]
-        drx, dry, drz = action[3:6]
+        # Scale normalized CEM action deltas to Cartesian units (mm & degrees)
+        # Normalized deltas [-0.1, 0.1] -> Translation scale 200.0 (mm), Rotation scale 50.0 (deg)
+        pos_scale = getattr(self, "pos_scale_mm", 200.0)
+        rot_scale = getattr(self, "rot_scale_deg", 50.0)
+
+        dx, dy, dz = action[0] * pos_scale, action[1] * pos_scale, action[2] * pos_scale
+        drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
         # Limit the Cartesian increment.
