@@ -848,16 +848,16 @@ class FairinoDriver(BaseRobot):
             norm_cmd = float(np.clip(command, 0.0, 1.0))
             pos_val = int(round(50.0 + norm_cmd * 40.0))
 
+            # Avoid redundant RS485 bus spam if target position is identical
+            if hasattr(self, "_last_gripper_pos") and self._last_gripper_pos == pos_val:
+                return True
+
             try:
                 # MoveGripper(index=1, pos, vel=30, force=40, maxtime=30000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)
                 ret = move_gripper(1, pos_val, 30, 40, 30000, 0, 0, 0, 0, 0)
-                if ret == 73:
-                    logger.info("[ROBOT] Gripper not activated (Code 73). Running setup_gripper()...")
-                    self.setup_gripper()
-                    ret = move_gripper(1, pos_val, 30, 40, 30000, 0, 0, 0, 0, 0)
-
                 if ret != 0:
-                    logger.warning("[ROBOT] MoveGripper returned code: %s", ret)
+                    logger.info("[ROBOT] MoveGripper(pos=%s) returned code: %s", pos_val, ret)
+                self._last_gripper_pos = pos_val
             except TypeError:
                 # Fallback for alternative SDK MoveGripper signatures
                 try:
