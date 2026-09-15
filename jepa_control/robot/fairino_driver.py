@@ -343,6 +343,10 @@ class FairinoDriver(BaseRobot):
                 ret_enable,
                 ret_mode,
             )
+
+            # Automatically configure and activate JODELL RG gripper (Company=6, Device=0)
+            self.setup_gripper()
+
             return True
 
         except Exception as exc:
@@ -350,6 +354,33 @@ class FairinoDriver(BaseRobot):
                 "[ROBOT] Failed to prepare robot for AUTO mode: %s",
                 exc,
             )
+            return False
+
+    def setup_gripper(self, bus: int = 0) -> bool:
+        """
+        Configure and activate JODELL RG gripper (Company=6, Device=0, Mount=End port 1).
+        """
+        if self.mock or self.robot is None:
+            return True
+
+        try:
+            set_cfg = getattr(self.robot, "SetGripperConfig", None)
+            act_grp = getattr(self.robot, "ActGripper", None)
+
+            if set_cfg is not None:
+                res_cfg = set_cfg(company=6, device=0, softversion=0, bus=bus)
+                logger.info("[ROBOT] SetGripperConfig(company=6, device=0, bus=%s) status: %s", bus, res_cfg)
+
+            if act_grp is not None:
+                act_grp(index=1, action=0)  # Reset
+                time.sleep(1.0)
+                res_act = act_grp(index=1, action=1)  # Enable/Activate
+                logger.info("[ROBOT] ActGripper(1, action=1) enable status: %s", res_act)
+                time.sleep(2.0)
+
+            return True
+        except Exception as exc:
+            logger.warning("[ROBOT] setup_gripper failed: %s", exc)
             return False
 
     # -----------------------------------------------------------------------
@@ -812,32 +843,18 @@ class FairinoDriver(BaseRobot):
             return True
 
         try:
-            # Clamp command to normalized range [0.0, 1.0] -> pos [0, 100]
+            # Clamp command to normalized range [0.0, 1.0] -> JODELL RG position range [50, 90]
+            # 0.0 (OPEN) -> pos 50, 1.0 (CLOSE) -> pos 90
             norm_cmd = float(np.clip(command, 0.0, 1.0))
-            pos_val = int(round(norm_cmd * 100.0))
-
-            # Check if ActGripper / SetGripperConfig are available
-            act_gripper = getattr(self.robot, "ActGripper", None)
-            set_gripper_config = getattr(self.robot, "SetGripperConfig", None)
+            pos_val = int(round(50.0 + norm_cmd * 40.0))
 
             try:
-                # Signature in modified Fairino SDK:
-                # MoveGripper(index, pos, vel, force, maxtime, block, type, rotNum, rotVel, rotTorque)
-                ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
+                # MoveGripper(index=1, pos, vel=30, force=40, maxtime=30000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)
+                ret = move_gripper(1, pos_val, 30, 40, 30000, 0, 0, 0, 0, 0)
                 if ret == 73:
-                    logger.info("[ROBOT] Gripper not activated (Code 73). Attempting activation...")
-                    if act_gripper is not None:
-                        act_ret = act_gripper(1, 1)
-                        logger.info("[ROBOT] ActGripper(1, 1) returned: %s", act_ret)
-                        if act_ret != 0 and set_gripper_config is not None:
-                            logger.info("[ROBOT] ActGripper returned %s. Configuring gripper via SetGripperConfig(1, 0)...", act_ret)
-                            cfg_ret = set_gripper_config(1, 0, 0, 0)
-                            logger.info("[ROBOT] SetGripperConfig(1, 0) returned: %s", cfg_ret)
-                            time.sleep(1.0)
-                            act_ret = act_gripper(1, 1)
-                            logger.info("[ROBOT] Retry ActGripper(1, 1) returned: %s", act_ret)
-                        time.sleep(1.0)
-                    ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
+                    logger.info("[ROBOT] Gripper not activated (Code 73). Running setup_gripper()...")
+                    self.setup_gripper()
+                    ret = move_gripper(1, pos_val, 30, 40, 30000, 0, 0, 0, 0, 0)
 
                 if ret != 0:
                     logger.warning("[ROBOT] MoveGripper returned code: %s", ret)
