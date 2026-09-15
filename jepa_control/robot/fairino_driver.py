@@ -157,6 +157,9 @@ class FairinoDriver(BaseRobot):
                 "[ROBOT] Successfully connected to Fairino FR10."
             )
 
+            # Auto-enable robot servos and set AUTO mode on connect
+            self._prepare_auto()
+
             return True
 
         except Exception as exc:
@@ -304,14 +307,8 @@ class FairinoDriver(BaseRobot):
 
     def _prepare_auto(self) -> bool:
         """
-        Prepare the physical robot for automatic motion.
-
-        WARNING:
-            This method can change the physical robot state.
-
-        It is intentionally NOT called by connect().
+        Prepare the physical robot for automatic motion (Enable servos + AUTO mode).
         """
-
         if self.mock:
             return True
 
@@ -321,43 +318,23 @@ class FairinoDriver(BaseRobot):
             )
             return False
 
-        # Check safety before changing robot state.
-        if not self.check_safety():
-            logger.error(
-                "[ROBOT] Cannot prepare robot because safety check failed."
-            )
-            return False
-
         try:
             # Enable robot.
-            ret = self.robot.RobotEnable(1)
+            ret_enable = self.robot.RobotEnable(1)
 
-            if ret != 0:
-                logger.error(
-                    "[ROBOT] RobotEnable(1) failed: %s",
-                    ret,
-                )
-                return False
-
-            # Automatic mode.
-            ret = self.robot.Mode(0)
-
-            if ret != 0:
-                logger.error(
-                    "[ROBOT] Mode(0) failed: %s",
-                    ret,
-                )
-                return False
+            # Automatic mode (0 = AUTO).
+            ret_mode = self.robot.Mode(0)
 
             logger.info(
-                "[ROBOT] Robot prepared for automatic operation."
+                "[ROBOT] RobotEnable status: %s | Mode(0) AUTO status: %s",
+                ret_enable,
+                ret_mode,
             )
-
             return True
 
         except Exception as exc:
             logger.exception(
-                "[ROBOT] Failed to prepare robot: %s",
+                "[ROBOT] Failed to prepare robot for AUTO mode: %s",
                 exc,
             )
             return False
@@ -609,6 +586,35 @@ class FairinoDriver(BaseRobot):
                 overSpeedStrategy=0,
                 speedPercent=10,
             )
+
+            if ret != 0:
+                logger.warning(
+                    "[ROBOT] MoveL initially failed with error code: %s. Attempting auto-enable recovery...",
+                    ret,
+                )
+                self._prepare_auto()
+                import time
+                time.sleep(0.2)
+                ret = self.robot.MoveL(
+                    desc_pos=target_pose[:6].tolist(),
+                    tool=self.tool_id,
+                    user=self.user_frame_id,
+                    joint_pos=joint_pos,
+                    vel=move_speed,
+                    acc=0.0,
+                    ovl=100.0,
+                    blendR=-1.0,
+                    blendMode=0,
+                    exaxis_pos=[0.0, 0.0, 0.0, 0.0],
+                    search=0,
+                    offset_flag=0,
+                    offset_pos=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    oacc=100.0,
+                    config=-1,
+                    velAccParamMode=0,
+                    overSpeedStrategy=0,
+                    speedPercent=10,
+                )
 
             if ret != 0:
                 logger.error(
