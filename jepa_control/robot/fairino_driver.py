@@ -698,12 +698,13 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Scale normalized CEM action deltas to Cartesian units (mm & degrees)
-        # Position scale 200.0 (mm). Rotation scale set to 0.0 to lock TCP orientation and avoid wrist IK singularities (Error 112).
+        # Position scale 200.0 (mm). Invert dz (-action[2]) so visual reach-down actions drive arm downward (-Z) toward table.
         pos_scale = getattr(self, "pos_scale_mm", 200.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
-        dx, dy, dz = action[0] * pos_scale, action[1] * pos_scale, action[2] * pos_scale
+        dx = action[0] * pos_scale
+        dy = action[1] * pos_scale
+        dz = -action[2] * pos_scale
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
