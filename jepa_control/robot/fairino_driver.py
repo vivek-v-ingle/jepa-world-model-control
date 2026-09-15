@@ -12,6 +12,7 @@ Supports:
 
 from __future__ import annotations
 
+import time
 import logging
 from typing import Optional
 
@@ -815,18 +816,27 @@ class FairinoDriver(BaseRobot):
             norm_cmd = float(np.clip(command, 0.0, 1.0))
             pos_val = int(round(norm_cmd * 100.0))
 
-            # Check if ActGripper is available to ensure gripper activation
+            # Check if ActGripper / SetGripperConfig are available
             act_gripper = getattr(self.robot, "ActGripper", None)
+            set_gripper_config = getattr(self.robot, "SetGripperConfig", None)
 
             try:
                 # Signature in modified Fairino SDK:
                 # MoveGripper(index, pos, vel, force, maxtime, block, type, rotNum, rotVel, rotTorque)
                 ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
-                if ret == 73 and act_gripper is not None:
-                    logger.info("[ROBOT] Gripper not activated (Code 73). Activating gripper with ActGripper(1, 1)...")
-                    act_ret = act_gripper(1, 1)
-                    logger.info("[ROBOT] ActGripper(1, 1) returned: %s", act_ret)
-                    time.sleep(1.0)
+                if ret == 73:
+                    logger.info("[ROBOT] Gripper not activated (Code 73). Attempting activation...")
+                    if act_gripper is not None:
+                        act_ret = act_gripper(1, 1)
+                        logger.info("[ROBOT] ActGripper(1, 1) returned: %s", act_ret)
+                        if act_ret != 0 and set_gripper_config is not None:
+                            logger.info("[ROBOT] ActGripper returned %s. Configuring gripper via SetGripperConfig(1, 0)...", act_ret)
+                            cfg_ret = set_gripper_config(1, 0, 0, 0)
+                            logger.info("[ROBOT] SetGripperConfig(1, 0) returned: %s", cfg_ret)
+                            time.sleep(1.0)
+                            act_ret = act_gripper(1, 1)
+                            logger.info("[ROBOT] Retry ActGripper(1, 1) returned: %s", act_ret)
+                        time.sleep(1.0)
                     ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
 
                 if ret != 0:
