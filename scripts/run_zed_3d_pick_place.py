@@ -42,7 +42,7 @@ def move_to_xyz(driver: FairinoDriver, target_x: float, target_y: float, target_
         action_7d = [
             float(step_delta[0] / 120.0),
             float(step_delta[1] / 120.0),
-            float(-step_delta[2] / 220.0),
+            float(step_delta[2] / 220.0),
             0.0, 0.0, 0.0,
             float(gripper_val)
         ]

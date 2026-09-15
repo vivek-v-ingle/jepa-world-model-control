@@ -588,16 +588,16 @@ class FairinoDriver(BaseRobot):
             # Ensure arm is settled before commanding next trajectory step
             self.wait_for_motion_completion(timeout_sec=1.5)
 
-            # Six zeros tell the Fairino SDK to calculate the joint
-            # solution automatically using inverse kinematics.
-            joint_pos = [
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ]
+            # Query actual joint position as seed for MoveL inverse kinematics
+            joint_pos = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            try:
+                get_jpos = getattr(self.robot, "GetActualJointPos", None)
+                if get_jpos is not None:
+                    res_j = get_jpos(1) # 1 = deg
+                    if isinstance(res_j, tuple) and res_j[0] == 0:
+                        joint_pos = res_j[1]
+            except Exception:
+                pass
 
             ret = self.robot.MoveL(
                 desc_pos=target_pose[:6].tolist(),
