@@ -282,6 +282,9 @@ class FairinoDriver(BaseRobot):
             return True
 
         import time
+        # Allow state stream 20004 to register motion start
+        time.sleep(0.25)
+
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
             try:
@@ -589,11 +592,13 @@ class FairinoDriver(BaseRobot):
 
             if ret != 0:
                 logger.warning(
-                    "[ROBOT] MoveL initially failed with error code: %s. Attempting auto-enable recovery...",
+                    "[ROBOT] MoveL initially failed with error code: %s. Waiting for trajectory settling...",
                     ret,
                 )
-                self._prepare_auto()
                 import time
+                time.sleep(0.5)
+                self.wait_for_motion_completion(timeout_sec=3.0)
+                self._prepare_auto()
                 time.sleep(0.2)
                 ret = self.robot.MoveL(
                     desc_pos=target_pose[:6].tolist(),
