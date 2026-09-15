@@ -69,9 +69,9 @@ class FairinoDriver(BaseRobot):
         user_frame_id: int = 0,
         default_speed: float = 10.0,
         safe_z_mm: float = 50.0,
-        min_z_mm: float = -300.0,
+        min_z_mm: float = 245.0,
         max_z_mm: float = 1200.0,
-        max_cartesian_step_mm: float = 100.0,
+        max_cartesian_step_mm: float = 50.0,
         mock: bool = False,
     ):
         self.controller_ip = controller_ip
@@ -732,10 +732,10 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Position scale: XY = 200.0 mm, Z = 320.0 mm to match physical table surface height.
+        # Position scale: XY = 120.0 mm, Z = 220.0 mm for smooth, accurate tabletop approach.
         # Invert dz (-action[2]) so visual reach-down actions drive arm downward (-Z) toward table.
-        pos_scale_xy = getattr(self, "pos_scale_mm", 200.0)
-        pos_scale_z = getattr(self, "pos_scale_z_mm", 320.0)
+        pos_scale_xy = getattr(self, "pos_scale_mm", 120.0)
+        pos_scale_z = getattr(self, "pos_scale_z_mm", 220.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
         dx = action[0] * pos_scale_xy

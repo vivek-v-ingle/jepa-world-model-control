@@ -63,7 +63,7 @@ class AdaptiveGoalTracker:
     or after max_subgoal_steps retries.
     """
 
-    def __init__(self, l1_threshold: float = 0.83, queue_horizon: int = 4, max_subgoal_steps: int = 2):
+    def __init__(self, l1_threshold: float = 0.83, queue_horizon: int = 4, max_subgoal_steps: int = 4):
         self.l1_threshold = l1_threshold
         self.max_subgoal_steps = max_subgoal_steps
         self.obs_buffer = deque(maxlen=queue_horizon)

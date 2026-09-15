@@ -10,13 +10,13 @@ robot:
   safe_z_mm: 50.0
 
 safety_limits:
-  min_z_mm: -300.0
+  min_z_mm: 245.0             # Table surface floor limit (prevents crashing table)
   max_z_mm: 1200.0
   min_x_mm: -1000.0
   max_x_mm: 1000.0
   min_y_mm: -1000.0
   max_y_mm: 1000.0
-  max_cartesian_step_mm: 100.0 # Maximum allowed delta per step
+  max_cartesian_step_mm: 50.0 # Maximum allowed step size (5cm max jump for smooth execution)
 
 gripper:
   gripper_index: 1
