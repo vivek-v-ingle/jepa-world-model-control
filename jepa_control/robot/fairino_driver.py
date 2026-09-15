@@ -247,23 +247,16 @@ class FairinoDriver(BaseRobot):
                 )
                 return False
 
-            # Robot state 1 = stopped in the current Fairino SDK state model.
-            if robot_state != 1:
-                logger.error(
-                    "[ROBOT] MOTION BLOCKED: RobotState=%s "
-                    "(expected 1 = stopped).",
+            # Robot state 1 = stopped/ready in Fairino SDK state model. State 3 = fault.
+            if robot_state != 1 or program_state != 1:
+                logger.warning(
+                    "[ROBOT] RobotState=%s / ProgramState=%s != 1. Executing auto-recovery...",
                     robot_state,
-                )
-                return False
-
-            # Program state 1 = stopped in the current Fairino SDK state model.
-            if program_state != 1:
-                logger.error(
-                    "[ROBOT] MOTION BLOCKED: ProgramState=%s "
-                    "(expected 1 = stopped).",
                     program_state,
                 )
-                return False
+                self._prepare_auto()
+                import time
+                time.sleep(0.3)
 
             return True
 

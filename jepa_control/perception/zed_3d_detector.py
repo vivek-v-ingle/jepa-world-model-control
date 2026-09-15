@@ -169,12 +169,10 @@ class ZED3DObjectDetector:
                 return None
 
         # Map Camera 3D coordinates (mm) to Fairino Robot Base Frame coordinates (mm)
-        # Overhead camera transform:
-        # X_robot = -Y_cam + offset_x
-        # Y_robot = -X_cam + offset_y
-        # Z_robot = table surface height (~250-270 mm)
-        x_robot = float(-y_cam - 150.0)
-        y_robot = float(-x_cam - 50.0)
+        # Table center relative to base: X = -500.0 mm, Y = 0.0 mm
+        # Camera FOV mapping: X_cam -> Y_robot, Y_cam -> X_robot
+        y_robot = float(np.clip(-x_cam * 0.4, -220.0, 220.0))
+        x_robot = float(np.clip(-y_cam - 250.0, -580.0, -400.0))
         z_robot = float(270.0) # Safe grasp approach height above table
 
         res = {
