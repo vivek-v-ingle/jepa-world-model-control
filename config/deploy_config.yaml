@@ -52,9 +52,9 @@ planner:
   discrete_gripper: false
   mpc:
     rollout: 1
-    samples: 200
-    topk: 10
-    cem_steps: 50
+    samples: 60
+    topk: 8
+    cem_steps: 10
     momentum_mean: 0.15
     momentum_std: 0.75
     maxnorm: 0.1
