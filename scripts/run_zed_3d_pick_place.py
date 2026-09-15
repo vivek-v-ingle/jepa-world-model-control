@@ -39,10 +39,11 @@ def move_to_xyz(driver: FairinoDriver, target_x: float, target_y: float, target_
         step_delta = step_dir * step_len
 
         # Action vector: [dx, dy, dz, drx, dry, drz, gripper]
+        # Invert dz (-step_delta[2]) because fairino_driver.py multiplies dz = -action[2] * pos_scale_z
         action_7d = [
             float(step_delta[0] / 120.0),
             float(step_delta[1] / 120.0),
-            float(step_delta[2] / 220.0),
+            float(-step_delta[2] / 220.0),
             0.0, 0.0, 0.0,
             float(gripper_val)
         ]
