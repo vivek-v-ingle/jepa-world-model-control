@@ -732,13 +732,15 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Position scale 200.0 (mm). Invert dz (-action[2]) so visual reach-down actions drive arm downward (-Z) toward table.
-        pos_scale = getattr(self, "pos_scale_mm", 200.0)
+        # Position scale: XY = 200.0 mm, Z = 320.0 mm to match physical table surface height.
+        # Invert dz (-action[2]) so visual reach-down actions drive arm downward (-Z) toward table.
+        pos_scale_xy = getattr(self, "pos_scale_mm", 200.0)
+        pos_scale_z = getattr(self, "pos_scale_z_mm", 320.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
-        dx = action[0] * pos_scale
-        dy = action[1] * pos_scale
-        dz = -action[2] * pos_scale
+        dx = action[0] * pos_scale_xy
+        dy = action[1] * pos_scale_xy
+        dz = -action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
