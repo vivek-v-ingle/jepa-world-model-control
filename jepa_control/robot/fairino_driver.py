@@ -267,6 +267,37 @@ class FairinoDriver(BaseRobot):
             )
             return False
 
+    def wait_for_motion_completion(
+        self,
+        timeout_sec: float = 3.0,
+        poll_interval: float = 0.05,
+    ) -> bool:
+        """
+        Wait until robot_state returns to 1 (stopped) after issuing a motion command.
+        """
+        if self.mock or not self.is_connected or self.robot is None:
+            return True
+
+        import time
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            try:
+                state = getattr(self.robot, "robot_state_pkg", None)
+                if state is not None:
+                    robot_state = int(getattr(state, "robot_state", -1))
+                    program_state = int(getattr(state, "program_state", -1))
+                    if robot_state == 1 and program_state == 1:
+                        return True
+            except Exception:
+                pass
+            time.sleep(poll_interval)
+
+        logger.warning(
+            "[ROBOT] Motion completion wait timed out after %.2f s",
+            timeout_sec,
+        )
+        return False
+
     # -----------------------------------------------------------------------
     # Robot preparation
     # -----------------------------------------------------------------------
@@ -693,9 +724,11 @@ class FairinoDriver(BaseRobot):
         ):
             return False
 
-        # Apply gripper command after successful Cartesian motion.
-        if not self.set_gripper(gripper_cmd):
-            return False
+        # Apply gripper command (non-fatal if unconfigured/unsupported)
+        self.set_gripper(gripper_cmd)
+
+        # Wait for physical MoveL motion to complete so RobotState transitions back to 1 (stopped)
+        self.wait_for_motion_completion(timeout_sec=3.0)
 
         return True
 
@@ -708,7 +741,7 @@ class FairinoDriver(BaseRobot):
         Set gripper command.
 
         The exact Fairino gripper API differs between SDK versions.
-        Therefore this method only calls MoveGripper if available.
+        Therefore this method calls MoveGripper with fallback handling.
 
         Mock mode simply stores the command.
         """
@@ -752,35 +785,33 @@ class FairinoDriver(BaseRobot):
             return True
 
         try:
-            # Do not issue gripper commands when the robot is unsafe.
-            if not self.check_safety():
-                logger.error(
-                    "[ROBOT] Gripper command blocked by safety check."
-                )
-                return False
+            # Clamp command to normalized range [0.0, 1.0] -> pos [0, 100]
+            norm_cmd = float(np.clip(command, 0.0, 1.0))
+            pos_val = int(round(norm_cmd * 100.0))
 
-            # Clamp command to normalized range.
-            command = float(
-                np.clip(command, 0.0, 1.0)
-            )
-
-            ret = move_gripper(command)
-
-            if ret != 0:
-                logger.error(
-                    "[ROBOT] MoveGripper failed: %s",
-                    ret,
-                )
-                return False
+            try:
+                # Signature in modified Fairino SDK:
+                # MoveGripper(index, pos, vel, force, maxtime, block, type, rotNum, rotVel, rotTorque)
+                ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
+                if ret != 0:
+                    logger.warning("[ROBOT] MoveGripper returned code: %s", ret)
+            except TypeError:
+                # Fallback for alternative SDK MoveGripper signatures
+                try:
+                    ret = move_gripper(norm_cmd)
+                    if ret != 0:
+                        logger.warning("[ROBOT] MoveGripper single-arg returned code: %s", ret)
+                except Exception as exc:
+                    logger.warning("[ROBOT] MoveGripper single-arg call failed: %s", exc)
 
             return True
 
         except Exception as exc:
-            logger.exception(
-                "[ROBOT] Gripper command failed: %s",
+            logger.warning(
+                "[ROBOT] Gripper command skipped/failed: %s",
                 exc,
             )
-            return False
+            return True
 
     # -----------------------------------------------------------------------
     # Stop

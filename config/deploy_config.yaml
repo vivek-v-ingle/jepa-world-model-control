@@ -2,8 +2,10 @@
 
 meta:
   dtype: bfloat16
-  pretrain_checkpoint: /home/vvijaykumar/Demo-JEPA/exp/vjepa_2_1_dreamer_ac/latest.pt
-  dreamer_predictor_checkpoint: /home/vvijaykumar/Demo-JEPA/exp/vjepa_2_1_dreamer_predictor/latest.pt
+  # Keep large artifacts on the mounted Seagate drive; do not copy them into
+  # the repository or /home (which does not have sufficient free space).
+  pretrain_checkpoint: "/media/fr10/Seagate Backup Plus Drive/Vivek/Files for University lab/JEPA/exp/vjepa_2_1_dreamer_ac/latest.pt"
+  dreamer_predictor_checkpoint: "/media/fr10/Seagate Backup Plus Drive/Vivek/Files for University lab/JEPA/exp/vjepa_2_1_dreamer_predictor/latest.pt"
   context_encoder_key: target_encoder
   target_encoder_key: target_encoder
   seed: 42
@@ -59,7 +61,7 @@ planner:
     verbose: false
 
 reference:
-  reference_h5: /home/vvijaykumar/Demo-JEPA/data/pick_place/sawyer/episode_0.h5
+  reference_h5: /home/fr10/fr10_ws/src/jepa-world-model-control/data/reference/pick_and_place.h5
   image_key: observations/images/camera_front
-  ref_data_fps: 30
+  ref_data_fps: 15
   ref_target_fps: 5

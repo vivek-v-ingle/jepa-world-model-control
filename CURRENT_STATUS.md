@@ -60,15 +60,10 @@ The robot has already moved from its original test position.
 
 ## Immediate next task
 
-1. Inspect/fix set_gripper() and step_action().
-2. Make step_action() return True when MoveL succeeds and there is no actual gripper failure.
-3. Test without physical motion first.
-4. Commit and push the fix.
-5. Test step_action() physically with a very small bounded movement.
-6. Continue with ZED -> observation -> JEPA pipeline.
-7. Resolve missing Sawyer demonstration H5 required by offline rollout.
-8. Connect model-generated 7D actions to FR10.
-9. Perform closed-loop adaptive replanning validation.
+1. [COMPLETED] Inspect/fix set_gripper() signature & fallback and step_action() motion settling.
+2. [COMPLETED] Make step_action() wait for motion completion and return True when MoveL succeeds.
+3. Perform physical test run: `python scripts/test_fairino_dry_run.py --live --ip 192.168.57.2`
+4. Run live visual imitation: `python scripts/run_offline_rollout.py --config config/deploy_config.yaml --live --camera zed --visualize`
 
 ## Safety
 

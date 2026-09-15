@@ -1,0 +1,34 @@
+# Minimal, hardware-free checkpoint and one-step inference validation.
+# Keep the architecture and image geometry aligned with the trained checkpoints.
+meta:
+  dtype: bfloat16
+  pretrain_checkpoint: "/media/fr10/Seagate Backup Plus Drive/Vivek/Files for University lab/JEPA/exp/vjepa_2_1_dreamer_ac/latest.pt"
+  dreamer_predictor_checkpoint: "/media/fr10/Seagate Backup Plus Drive/Vivek/Files for University lab/JEPA/exp/vjepa_2_1_dreamer_predictor/latest.pt"
+
+model:
+  pred_depth: 24
+  pred_embed_dim: 1024
+
+data:
+  crop_size: 256
+  patch_size: 16
+  tubelet_size: 2
+
+planner:
+  l1_threshold: 1.0
+  queue_horizon: 4
+  abs_gripper: true
+  mpc:
+    rollout: 1
+    samples: 4
+    topk: 2
+    cem_steps: 1
+    momentum_mean: 0.15
+    momentum_std: 0.75
+    maxnorm: 0.1
+
+reference:
+  reference_h5: /home/fr10/fr10_ws/src/jepa-world-model-control/data/reference/pick_and_place.h5
+  image_key: observations/images/camera_front
+  ref_data_fps: 15
+  ref_target_fps: 5
