@@ -845,21 +845,22 @@ class FairinoDriver(BaseRobot):
             return True
 
         try:
-            # Clamp command to normalized range [0.0, 1.0] -> JODELL RG position range [50, 90]
-            # 0.0 (OPEN) -> pos 50, 1.0 (CLOSE) -> pos 90
+            # Binary gripper state for JODELL RG: command > 0.5 -> CLOSE (90), <= 0.5 -> OPEN (50)
             norm_cmd = float(np.clip(command, 0.0, 1.0))
-            pos_val = int(round(50.0 + norm_cmd * 40.0))
+            is_closed = bool(norm_cmd > 0.5)
 
-            # Avoid redundant RS485 bus spam if target position is identical
-            if hasattr(self, "_last_gripper_pos") and self._last_gripper_pos == pos_val:
+            # Avoid spamming RS485 bus if gripper state (OPEN vs CLOSE) has not changed
+            if hasattr(self, "_last_gripper_state") and self._last_gripper_state == is_closed:
                 return True
 
+            pos_val = 90 if is_closed else 50
+
             try:
-                # MoveGripper(index=1, pos, vel=30, force=40, maxtime=30000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)
-                ret = move_gripper(1, pos_val, 30, 40, 30000, 0, 0, 0, 0, 0)
+                # MoveGripper(index=1, pos, vel=30, force=40, maxtime=5000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)
+                ret = move_gripper(1, pos_val, 30, 40, 5000, 0, 0, 0, 0, 0)
                 if ret != 0:
-                    logger.info("[ROBOT] MoveGripper(pos=%s) returned code: %s", pos_val, ret)
-                self._last_gripper_pos = pos_val
+                    logger.info("[ROBOT] MoveGripper(pos=%s, closed=%s) returned code: %s", pos_val, is_closed, ret)
+                self._last_gripper_state = is_closed
             except TypeError:
                 # Fallback for alternative SDK MoveGripper signatures
                 try:
