@@ -59,13 +59,16 @@ class ReferenceEpisodeLoader:
 class AdaptiveGoalTracker:
     """
     Monitors the latent L1 distance between the robot's current latent state
-    and the intended subgoal. Advances demonstration frames only when D_k < epsilon.
+    and the intended subgoal. Advances demonstration frames when D_k < epsilon
+    or after max_subgoal_steps retries.
     """
 
-    def __init__(self, l1_threshold: float = 1.0, queue_horizon: int = 4):
+    def __init__(self, l1_threshold: float = 0.83, queue_horizon: int = 4, max_subgoal_steps: int = 2):
         self.l1_threshold = l1_threshold
+        self.max_subgoal_steps = max_subgoal_steps
         self.obs_buffer = deque(maxlen=queue_horizon)
         self.prev_goal: Optional[torch.Tensor] = None
+        self.retry_count = 0
 
     def should_advance(self, current_latent: torch.Tensor) -> Tuple[bool, float]:
         """
@@ -86,9 +89,11 @@ class AdaptiveGoalTracker:
         ]
         min_dist = float(min(dists))
 
-        advance = min_dist < self.l1_threshold
+        self.retry_count += 1
+        advance = (min_dist < self.l1_threshold) or (self.retry_count >= self.max_subgoal_steps)
         if advance:
             self.obs_buffer.clear()
+            self.retry_count = 0
 
         return advance, min_dist
 
