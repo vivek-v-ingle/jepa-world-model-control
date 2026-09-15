@@ -631,19 +631,14 @@ class FairinoDriver(BaseRobot):
                 config=-1,
                 velAccParamMode=0,
                 overSpeedStrategy=0,
-                speedPercent=10,
+                speedPercent=35,
             )
 
-            if ret != 0:
-                logger.warning(
-                    "[ROBOT] MoveL initially failed with error code: %s. Waiting for trajectory settling...",
-                    ret,
-                )
+            if ret == 185:
+                # Code 185: Trajectory in progress. Wait briefly for previous command to settle and retry.
                 import time
-                time.sleep(0.5)
-                self.wait_for_motion_completion(timeout_sec=3.0)
-                self._prepare_auto()
-                time.sleep(0.2)
+                time.sleep(0.1)
+                self.wait_for_motion_completion(timeout_sec=1.5)
                 ret = self.robot.MoveL(
                     desc_pos=target_pose[:6].tolist(),
                     tool=self.tool_id,
@@ -662,7 +657,7 @@ class FairinoDriver(BaseRobot):
                     config=-1,
                     velAccParamMode=0,
                     overSpeedStrategy=0,
-                    speedPercent=10,
+                    speedPercent=35,
                 )
 
             if ret != 0:
@@ -671,6 +666,10 @@ class FairinoDriver(BaseRobot):
                     ret,
                 )
                 return False
+
+            # Wait for physical motion completion so next step starts cleanly
+            self.wait_for_motion_completion(timeout_sec=1.5)
+            return True
 
             logger.info(
                 "[ROBOT] MoveL command accepted."
