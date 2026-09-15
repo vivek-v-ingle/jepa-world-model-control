@@ -322,6 +322,15 @@ class FairinoDriver(BaseRobot):
             return False
 
         try:
+            # Clear any controller alarms/faults from previous move interruptions
+            reset_err = getattr(self.robot, "ResetAllError", None)
+            if reset_err is not None:
+                try:
+                    res_code = reset_err()
+                    logger.info("[ROBOT] ResetAllError status: %s", res_code)
+                except Exception as e:
+                    logger.warning("[ROBOT] ResetAllError exception: %s", e)
+
             # Enable robot.
             ret_enable = self.robot.RobotEnable(1)
 
