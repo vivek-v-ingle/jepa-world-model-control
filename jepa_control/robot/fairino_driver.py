@@ -161,6 +161,9 @@ class FairinoDriver(BaseRobot):
             # Auto-enable robot servos and set AUTO mode on connect
             self._prepare_auto()
 
+            # Configure and activate JODELL RG gripper once on startup
+            self.setup_gripper()
+
             return True
 
         except Exception as exc:
@@ -343,9 +346,6 @@ class FairinoDriver(BaseRobot):
                 ret_enable,
                 ret_mode,
             )
-
-            # Automatically configure and activate JODELL RG gripper (Company=6, Device=0)
-            self.setup_gripper()
 
             return True
 
@@ -592,6 +592,9 @@ class FairinoDriver(BaseRobot):
         )
 
         try:
+            # Ensure arm is settled before commanding next trajectory step
+            self.wait_for_motion_completion(timeout_sec=1.5)
+
             # Six zeros tell the Fairino SDK to calculate the joint
             # solution automatically using inverse kinematics.
             joint_pos = [
