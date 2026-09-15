@@ -815,10 +815,20 @@ class FairinoDriver(BaseRobot):
             norm_cmd = float(np.clip(command, 0.0, 1.0))
             pos_val = int(round(norm_cmd * 100.0))
 
+            # Check if ActGripper is available to ensure gripper activation
+            act_gripper = getattr(self.robot, "ActGripper", None)
+
             try:
                 # Signature in modified Fairino SDK:
                 # MoveGripper(index, pos, vel, force, maxtime, block, type, rotNum, rotVel, rotTorque)
                 ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
+                if ret == 73 and act_gripper is not None:
+                    logger.info("[ROBOT] Gripper not activated (Code 73). Activating gripper with ActGripper(1, 1)...")
+                    act_ret = act_gripper(1, 1)
+                    logger.info("[ROBOT] ActGripper(1, 1) returned: %s", act_ret)
+                    time.sleep(1.0)
+                    ret = move_gripper(1, pos_val, 50, 50, 5000, 0, 0, 0, 0, 0)
+
                 if ret != 0:
                     logger.warning("[ROBOT] MoveGripper returned code: %s", ret)
             except TypeError:
