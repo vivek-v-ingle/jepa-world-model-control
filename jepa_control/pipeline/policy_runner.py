@@ -57,8 +57,10 @@ class JEPAPolicyRunner:
         )
 
         self.goal_tracker = AdaptiveGoalTracker(
-            l1_threshold=planner_cfg.get("l1_threshold", 1.0),
+            l1_threshold=planner_cfg.get("l1_threshold", 0.73),
             queue_horizon=planner_cfg.get("queue_horizon", 4),
+            min_subgoal_steps=planner_cfg.get("min_subgoal_steps", 3),
+            max_subgoal_steps=planner_cfg.get("max_subgoal_steps", 8),
         )
 
     def _init_models(self):
@@ -107,9 +109,14 @@ class JEPAPolicyRunner:
             num_self_attn_blocks=16,
         )
 
-        # Load weights
+        # Resolve checkpoint paths with fallback
         pretrain_ckpt = meta_cfg.get("pretrain_checkpoint")
+        if not pretrain_ckpt or not os.path.exists(pretrain_ckpt):
+            pretrain_ckpt = meta_cfg.get("alt_pretrain_checkpoint")
+
         dreamer_ckpt = meta_cfg.get("dreamer_predictor_checkpoint")
+        if not dreamer_ckpt or not os.path.exists(dreamer_ckpt):
+            dreamer_ckpt = meta_cfg.get("alt_dreamer_checkpoint")
 
         if pretrain_ckpt and os.path.exists(pretrain_ckpt):
             logger.info(f"Loading pretrain checkpoint: {pretrain_ckpt}")
@@ -124,6 +131,8 @@ class JEPAPolicyRunner:
             pred_dict = ckpt.get("predictor", {})
             clean_pred = {k.replace("module.", "").replace("backbone.", ""): v for k, v in pred_dict.items()}
             self.predictor.load_state_dict(clean_pred, strict=False)
+        else:
+            logger.warning(f"No valid pretrain checkpoint found at {pretrain_ckpt}")
 
         if dreamer_ckpt and os.path.exists(dreamer_ckpt):
             logger.info(f"Loading dreamer checkpoint: {dreamer_ckpt}")
@@ -131,6 +140,8 @@ class JEPAPolicyRunner:
             d_dict = d_ckpt.get("dreamer_predictor", d_ckpt)
             clean_d = {k.replace("module.", "").replace("backbone.", ""): v for k, v in d_dict.items()}
             self.dreamer_predictor.load_state_dict(clean_d, strict=False)
+        else:
+            logger.warning(f"No valid dreamer checkpoint found at {dreamer_ckpt}")
 
         # Move to device & freeze evaluation
         for m in [self.encoder, self.predictor, self.dreamer_predictor]:

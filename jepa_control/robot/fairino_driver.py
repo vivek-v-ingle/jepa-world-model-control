@@ -94,7 +94,7 @@ class FairinoDriver(BaseRobot):
         # Mock starting pose:
         # [x, y, z, rx, ry, rz, gripper]
         self._mock_pose = np.array(
-            [300.0, 0.0, 200.0, 180.0, 0.0, 0.0, 0.0],
+            [-460.0, -230.0, 500.0, 180.0, 0.0, 0.0, 0.0],
             dtype=np.float32,
         )
 
