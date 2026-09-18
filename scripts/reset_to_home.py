@@ -21,11 +21,11 @@ from jepa_control.robot.fairino_driver import FairinoDriver
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s")
 logger = logging.getLogger("ResetHome")
 
-DEFAULT_READY_POSE = np.array([-460.0, -230.0, 350.0, 174.28, 3.93, -11.68, 0.0], dtype=np.float32)
+DEFAULT_READY_POSE = np.array([-460.0, -230.0, 285.0, 174.28, 3.93, -11.68, 0.0], dtype=np.float32)
 
 def main():
     parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose")
-    parser.add_argument("--z", type=float, default=350.0, help="Target Z height in mm (default: 350.0)")
+    parser.add_argument("--z", type=float, default=285.0, help="Target Z height in mm (default: 285.0)")
     args = parser.parse_args()
 
     ready_pose = DEFAULT_READY_POSE.copy()

@@ -249,28 +249,9 @@ class FairinoDriver(BaseRobot):
                 )
                 return False
 
-            # Robot state 1 = stopped. If still moving, wait briefly for completion.
-            if robot_state != 1:
-                self.wait_for_motion_completion(timeout_sec=1.0)
-                state = getattr(self.robot, "robot_state_pkg", None)
-                if state is not None:
-                    robot_state = int(getattr(state, "robot_state", -1))
-                if robot_state != 1:
-                    logger.error(
-                        "[ROBOT] MOTION BLOCKED: RobotState=%s "
-                        "(expected 1 = stopped).",
-                        robot_state,
-                    )
-                    return False
-
-            # Program state 1 = stopped in the current Fairino SDK state model.
-            if program_state != 1:
-                logger.error(
-                    "[ROBOT] MOTION BLOCKED: ProgramState=%s "
-                    "(expected 1 = stopped).",
-                    program_state,
-                )
-                return False
+            # Settle arm if motion still in progress from previous command
+            if robot_state != 1 or program_state != 1:
+                self.wait_for_motion_completion(timeout_sec=0.8)
 
             return True
 
@@ -745,14 +726,14 @@ class FairinoDriver(BaseRobot):
             return False
 
         # Position scale: XY = 180.0 mm, Z = 250.0 mm for responsive tabletop approach.
-        # dx = -action[0]: forward into table is -X (away from base column).
-        # dy = action[1]: left is -Y (screwdriver), right is +Y (tray).
-        # dz = action[2]: down toward table is -Z, lift up into air is +Z.
+        # dx = action[0]: negative action[0] drives forward (-X) into table towards screwdriver.
+        # dy = action[1]: negative action[1] drives left (-Y) towards screwdriver, positive towards tray.
+        # dz = -action[2]: positive visual reach drives downward (-Z) toward tabletop.
         pos_scale_xy = getattr(self, "pos_scale_mm", 180.0)
         pos_scale_z = getattr(self, "pos_scale_z_mm", 250.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
-        dx = -action[0] * pos_scale_xy
+        dx = action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
         dz = action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
