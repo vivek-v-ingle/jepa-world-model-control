@@ -92,6 +92,7 @@ def main():
     l1_threshold = config.get("planner", {}).get("l1_threshold", 0.70)
 
     current_phase = 1
+    phase_step_count = 0
     phase_names = {
         1: "APPROACH & DESCEND TO OBJECT",
         2: "GRASP TARGET OBJECT",
@@ -205,33 +206,40 @@ def main():
         # Check physical milestone transition conditions:
         z_curr = new_pose[2]
         y_curr = new_pose[1]
+        x_curr = new_pose[0]
+        phase_step_count += 1
 
         if current_phase == 1:
-            # Transition to GRASP when near table (Z <= 290mm) or after 12 steps
-            if z_curr <= 290.0 or step >= 12:
+            # Transition to GRASP when near table (Z <= 290mm) or after 12 approach steps
+            if z_curr <= 290.0 or phase_step_count >= 12:
                 logger.info("🎯 Milestone reached: Arm has reached grasp height near object -> Entering Phase 2 (GRASP).")
                 current_phase = 2
+                phase_step_count = 0
         elif current_phase == 2:
             # Grasp object with gripper
             robot.set_gripper(1.0)
             logger.info("🎯 Milestone reached: Gripper closed on object -> Entering Phase 3 (LIFT).")
             current_phase = 3
+            phase_step_count = 0
         elif current_phase == 3:
-            # Lift object off table (Z >= 370mm)
-            if z_curr >= 370.0:
+            # Lift object off table (Z >= 305mm or after 5 lift steps)
+            if z_curr >= 305.0 or phase_step_count >= 5:
                 logger.info("🎯 Milestone reached: Object lifted off table -> Entering Phase 4 (TRANSPORT).")
                 current_phase = 4
+                phase_step_count = 0
         elif current_phase == 4:
-            # Transport across table toward tool tray (Y >= -130mm, tray is at Y ~ -100)
-            if y_curr >= -130.0:
+            # Transport across table toward tool tray (X >= -360mm or Y >= -150mm or after 16 transport steps)
+            if (x_curr >= -360.0 or y_curr >= -150.0) or phase_step_count >= 16:
                 logger.info("🎯 Milestone reached: End effector reached tool tray -> Entering Phase 5 (PLACE).")
                 current_phase = 5
+                phase_step_count = 0
         elif current_phase == 5:
-            # Place down in tray (Z <= 290mm)
-            if z_curr <= 290.0:
+            # Place down in tray (Z <= 290mm or after 5 placement steps)
+            if z_curr <= 290.0 or phase_step_count >= 5:
                 robot.set_gripper(0.0)
                 logger.info("🎉 Milestone reached: Object placed and released into tool tray!")
                 current_phase = 6
+                phase_step_count = 0
 
     # Cleanup
     if camera is not None:

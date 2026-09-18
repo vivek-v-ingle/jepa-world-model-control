@@ -249,14 +249,19 @@ class FairinoDriver(BaseRobot):
                 )
                 return False
 
-            # Robot state 1 = stopped in the current Fairino SDK state model.
+            # Robot state 1 = stopped. If still moving, wait briefly for completion.
             if robot_state != 1:
-                logger.error(
-                    "[ROBOT] MOTION BLOCKED: RobotState=%s "
-                    "(expected 1 = stopped).",
-                    robot_state,
-                )
-                return False
+                self.wait_for_motion_completion(timeout_sec=1.0)
+                state = getattr(self.robot, "robot_state_pkg", None)
+                if state is not None:
+                    robot_state = int(getattr(state, "robot_state", -1))
+                if robot_state != 1:
+                    logger.error(
+                        "[ROBOT] MOTION BLOCKED: RobotState=%s "
+                        "(expected 1 = stopped).",
+                        robot_state,
+                    )
+                    return False
 
             # Program state 1 = stopped in the current Fairino SDK state model.
             if program_state != 1:
@@ -289,7 +294,7 @@ class FairinoDriver(BaseRobot):
 
         import time
         # Allow state stream 20004 to register motion start
-        time.sleep(0.03)
+        time.sleep(0.10)
 
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
