@@ -60,11 +60,11 @@ planner:
     cem_steps: 5
     momentum_mean: 0.60
     momentum_std: 0.35
-    maxnorm: 0.1
+    maxnorm: 0.5
     verbose: false
 
 reference:
-  reference_h5: "data/reference/pick_and_place.h5"
+  reference_h5: "data/reference/fr10_pick_and_place.h5"
   image_key: observations/images/camera_front
-  ref_data_fps: 15
+  ref_data_fps: 10
   ref_target_fps: 5

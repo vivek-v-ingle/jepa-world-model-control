@@ -81,10 +81,12 @@ class FairinoDriver(BaseRobot):
         self.default_speed = float(default_speed)
 
         self.safe_z_mm = float(safe_z_mm)
-        self.min_z_mm = float(min_z_mm)
-        self.max_z_mm = float(max_z_mm)
-        self.min_x_mm = -950.0
-        self.max_x_mm = -230.0
+        self.min_z_mm = -45.0
+        self.max_z_mm = 350.0
+        self.min_x_mm = -810.0
+        self.max_x_mm = -200.0
+        self.min_y_mm = -820.0
+        self.max_y_mm = 50.0
 
         self.max_cartesian_step_mm = float(max_cartesian_step_mm)
 
@@ -725,17 +727,17 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Position scale: XY = 180.0 mm, Z = 250.0 mm for responsive tabletop approach.
-        # dx = action[0]: negative action[0] drives forward (-X) into table towards screwdriver.
-        # dy = action[1]: negative action[1] drives left (-Y) towards screwdriver, positive towards tray.
+        # Position scale: XY = 450.0 mm, Z = 500.0 mm for responsive tabletop approach.
+        # dx = action[0]: positive action[0] drives towards table center / screwdriver (+X relative to HOME).
+        # dy = action[1]: negative action[1] drives left (-Y) towards screwdriver.
         # dz = -action[2]: positive visual reach drives downward (-Z) toward tabletop.
-        pos_scale_xy = getattr(self, "pos_scale_mm", 180.0)
-        pos_scale_z = getattr(self, "pos_scale_z_mm", 250.0)
+        pos_scale_xy = getattr(self, "pos_scale_mm", 450.0)
+        pos_scale_z = getattr(self, "pos_scale_z_mm", 500.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
         dx = action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
-        dz = action[2] * pos_scale_z
+        dz = -action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
@@ -770,6 +772,18 @@ class FairinoDriver(BaseRobot):
         target_pose[3] += drx
         target_pose[4] += dry
         target_pose[5] += drz
+
+        # Clamp target pose safely within workspace bounding box so motion is smooth and never frozen
+        min_x = getattr(self, "min_x_mm", -810.0)
+        max_x = getattr(self, "max_x_mm", -200.0)
+        min_y = getattr(self, "min_y_mm", -820.0)
+        max_y = getattr(self, "max_y_mm", 50.0)
+        min_z = self.min_z_mm
+        max_z = self.max_z_mm
+
+        target_pose[0] = np.clip(target_pose[0], min_x, max_x)
+        target_pose[1] = np.clip(target_pose[1], min_y, max_y)
+        target_pose[2] = np.clip(target_pose[2], min_z, max_z)
 
         if not self._validate_target_pose(target_pose):
             return False

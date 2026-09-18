@@ -136,25 +136,25 @@ def main():
 
         # Update reference demonstration pair based on active milestone phase
         if current_phase == 1:
-            # Approaching screwdriver on table
-            ref_curr_idx = min(step * 3, 40)
-            ref_target_idx = min(ref_curr_idx + 15, 55)
+            # Approaching and descending to screwdriver on table (Pick pose is frames 250-290)
+            ref_curr_idx = min(60 + int(step * 10), 220)
+            ref_target_idx = min(180 + int(step * 8), 285)
         elif current_phase == 2:
-            # Grasping screwdriver
-            ref_curr_idx = 50
-            ref_target_idx = 60
+            # Grasping screwdriver handle
+            ref_curr_idx = 280
+            ref_target_idx = 320
         elif current_phase == 3:
-            # Lifting off table
-            ref_curr_idx = 60
-            ref_target_idx = 85
+            # Lifting screwdriver off table
+            ref_curr_idx = 320
+            ref_target_idx = 410
         elif current_phase == 4:
-            # Carrying to tool tray on right
-            ref_curr_idx = 85
-            ref_target_idx = 125
+            # Carrying to tool tray on right (Place pose is frames 580-660)
+            ref_curr_idx = 410
+            ref_target_idx = min(430 + int(phase_step_count * 15), 580)
         elif current_phase == 5:
             # Lowering and placing into tray
-            ref_curr_idx = 125
-            ref_target_idx = 155
+            ref_curr_idx = 580
+            ref_target_idx = 660
 
         curr_ref = all_demo_imgs[ref_curr_idx]
         future_ref = all_demo_imgs[ref_target_idx]
@@ -175,23 +175,15 @@ def main():
         if current_phase == 2:
             action_7d[6] = 1.0
         # In Phase 5 (RELEASE), open gripper
-        elif current_phase == 5 and current_pose[2] <= 295.0:
+        elif current_phase == 5 and current_pose[2] <= 50.0:
             action_7d[6] = 0.0
 
-        # Apply optional CLI directional inversions
-        if args.invert_dx:
-            action_7d[0] = -action_7d[0]
-        if args.invert_dy:
-            action_7d[1] = -action_7d[1]
-        if args.invert_dz:
-            action_7d[2] = -action_7d[2]
-
-        # Dispatch action to robot driver
+        # Execute physical action
         robot.step_action(action_7d)
         new_pose = robot.get_tcp_pose()
         logger.info(f"Robot Current TCP Pose: {[round(float(x), 2) for x in new_pose]}")
 
-        # Render Visualization Frame
+        # Render step telemetries
         if visualizer is not None:
             visualizer.render(
                 current_obs_rgb=obs_frame,
@@ -210,9 +202,10 @@ def main():
         phase_step_count += 1
 
         if current_phase == 1:
-            # Transition to GRASP when at grasp height near table (Z <= 268mm)
-            if (z_curr <= 268.0 and phase_step_count >= 2) or phase_step_count >= 15:
-                logger.info(f"🎯 Milestone reached: Arm at grasp height (Z={z_curr:.1f}mm) -> Entering Phase 2 (GRASP).")
+            # Transition to GRASP when near screwdriver (Z <= 30mm & Y <= -500mm, or safety timeout)
+            reached_screwdriver = (z_curr <= 30.0 and y_curr <= -500.0 and phase_step_count >= 2)
+            if reached_screwdriver or phase_step_count >= 40:
+                logger.info(f"🎯 Milestone reached: Arm at screwdriver grasp pose (X={x_curr:.1f}, Y={y_curr:.1f}, Z={z_curr:.1f}mm) -> Entering Phase 2 (GRASP).")
                 current_phase = 2
                 phase_step_count = 0
         elif current_phase == 2:
@@ -223,20 +216,21 @@ def main():
                 current_phase = 3
                 phase_step_count = 0
         elif current_phase == 3:
-            # Lift object off table (Z >= 340mm or after 6 lift steps)
-            if z_curr >= 340.0 or phase_step_count >= 6:
-                logger.info("🎯 Milestone reached: Object lifted off table -> Entering Phase 4 (TRANSPORT).")
+            # Lift object off table (Z >= 120mm or after 15 lift steps)
+            if (z_curr >= 120.0 and phase_step_count >= 2) or phase_step_count >= 15:
+                logger.info(f"🎯 Milestone reached: Object lifted off table (Z={z_curr:.1f}mm) -> Entering Phase 4 (TRANSPORT).")
                 current_phase = 4
                 phase_step_count = 0
         elif current_phase == 4:
-            # Transport across table toward tool tray (X >= -370mm and Y >= -150mm, or after 15 transport steps)
-            if (x_curr >= -370.0 and y_curr >= -150.0) or phase_step_count >= 15:
-                logger.info("🎯 Milestone reached: End effector reached tool tray -> Entering Phase 5 (PLACE).")
+            # Transport across table toward tool tray (X <= -650mm & Y >= -400mm, or after 40 transport steps)
+            reached_tray = (x_curr <= -650.0 and y_curr >= -400.0 and phase_step_count >= 4)
+            if reached_tray or phase_step_count >= 40:
+                logger.info(f"🎯 Milestone reached: End effector reached tool tray (X={x_curr:.1f}, Y={y_curr:.1f}mm) -> Entering Phase 5 (PLACE).")
                 current_phase = 5
                 phase_step_count = 0
         elif current_phase == 5:
-            # Place down in tray (Z <= 280mm or after 5 placement steps)
-            if z_curr <= 280.0 or phase_step_count >= 5:
+            # Place down in tray (Z <= 40mm or after 15 placement steps)
+            if z_curr <= 40.0 or phase_step_count >= 15:
                 robot.set_gripper(0.0)
                 logger.info("🎉 Milestone reached: Object placed and released into tool tray!")
                 current_phase = 6
