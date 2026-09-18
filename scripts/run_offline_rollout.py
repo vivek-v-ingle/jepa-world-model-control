@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--rotate_camera", type=int, default=0, choices=[0, 90, 180, 270], help="Rotate live camera image by N degrees (e.g. 180)")
     parser.add_argument("--invert_dx", action="store_true", help="Invert physical X direction (dx = -dx)")
     parser.add_argument("--invert_dy", action="store_true", help="Invert physical Y direction (dy = -dy)")
+    parser.add_argument("--invert_dz", action="store_true", help="Invert physical Z direction (dz = -dz)")
     args = parser.parse_args()
 
     # 1. Load Configurations
@@ -122,6 +123,8 @@ def main():
             action_7d[0] = -action_7d[0]
         if args.invert_dy:
             action_7d[1] = -action_7d[1]
+        if args.invert_dz:
+            action_7d[2] = -action_7d[2]
 
         # Dispatch action to robot driver
         robot.step_action(action_7d)

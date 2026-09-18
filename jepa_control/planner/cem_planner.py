@@ -70,6 +70,9 @@ class CEMPlanner:
         # Initialize distribution
         mean = torch.zeros((self.rollout, self.action_dim), device=device, dtype=torch.float32)
         std = torch.ones((self.rollout, self.action_dim), device=device, dtype=torch.float32) * self.maxnorm
+        if self.abs_gripper:
+            mean[:, -1] = 0.5
+            std[:, -1] = 0.5
 
         for step in range(self.cem_steps):
             # Sample action candidates: [S, Rollout, ActionDim]
@@ -99,6 +102,8 @@ class CEMPlanner:
 
             mean = self.momentum_mean * mean + (1.0 - self.momentum_mean) * new_mean
             std = self.momentum_std * std + (1.0 - self.momentum_std) * new_std
+            if self.abs_gripper:
+                std[:, -1] = torch.clamp(std[:, -1], min=0.15)
 
         # Return mean of the elite distribution
         best_action = mean[0] # First step action [7]

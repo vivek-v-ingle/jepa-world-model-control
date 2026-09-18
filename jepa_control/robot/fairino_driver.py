@@ -750,7 +750,7 @@ class FairinoDriver(BaseRobot):
 
         dx = action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
-        dz = action[2] * pos_scale_z
+        dz = -action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 

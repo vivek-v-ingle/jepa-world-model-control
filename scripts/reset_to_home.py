@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 import numpy as np
 
+import argparse
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -19,12 +21,19 @@ from jepa_control.robot.fairino_driver import FairinoDriver
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s")
 logger = logging.getLogger("ResetHome")
 
-READY_POSE = np.array([-460.0, -230.0, 500.0, 174.28, 3.93, -11.68, 0.0], dtype=np.float32)
+DEFAULT_READY_POSE = np.array([-460.0, -230.0, 400.0, 174.28, 3.93, -11.68, 0.0], dtype=np.float32)
 
 def main():
+    parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose")
+    parser.add_argument("--z", type=float, default=400.0, help="Target Z height in mm (default: 400.0)")
+    args = parser.parse_args()
+
+    ready_pose = DEFAULT_READY_POSE.copy()
+    ready_pose[2] = args.z
+
     logger.info("=" * 60)
     logger.info("Moving Fairino FR10 to Tabletop Ready Pose")
-    logger.info(f"Target Pose: {READY_POSE}")
+    logger.info(f"Target Pose: {ready_pose}")
     logger.info("=" * 60)
 
     driver = FairinoDriver(controller_ip="192.168.57.2", mock=False)
@@ -41,7 +50,7 @@ def main():
 
     # 2. Smoothly move to ready pose
     logger.info("Executing MoveL to ready pose at safe speed (15%)...")
-    success = driver._move_linear(READY_POSE[:6], speed=15.0)
+    success = driver._move_linear(ready_pose[:6], speed=15.0)
     time.sleep(1.0)
     driver.wait_for_motion_completion(timeout_sec=10.0)
 
