@@ -107,7 +107,7 @@ def main():
         current_pose = robot.get_tcp_pose()
 
         # Step JEPA Policy
-        action_7d, goal_latent, dist = runner.step(
+        action_7d, goal_latent, dist, advance, reason = runner.step(
             current_obs_rgb=obs_frame,
             current_robot_pose=current_pose,
             ref_curr_rgb=curr_ref,
@@ -115,7 +115,7 @@ def main():
         )
 
         logger.info(f"Planned Action Delta: {[round(float(x), 4) for x in action_7d]}")
-        logger.info(f"Latent L1 Progress Distance: {dist:.6f}")
+        logger.info(f"Latent L1 Progress Distance: {dist:.6f} (Tracker Status: {reason})")
 
         # Apply optional CLI directional inversions
         if args.invert_dx:
@@ -140,13 +140,14 @@ def main():
                 step_idx=step + 1,
             )
 
-        # Advance reference frame if progress achieved
-        advance = dist < l1_threshold
+        # Advance reference frame if progress achieved or max dwell reached
         if advance:
-            logger.info("Subgoal threshold reached -> Advancing reference demonstration frame.")
+            logger.info(f"Subgoal progress triggered [{reason}] -> Advancing demonstration frame ({ref_loader.current_idx}/{ref_loader.length}).")
             curr_ref, future_ref = ref_loader.get_reference_pair(advance=True)
+            if ref_loader.current_idx >= ref_loader.length - 1:
+                logger.info("🎉 Reference demonstration trajectory reached the final placement frame!")
         else:
-            logger.info("Subgoal not yet reached -> Retrying current demonstration frame.")
+            logger.info(f"Subgoal tracking in progress [{reason}] -> Continuing current demonstration frame.")
 
     # Cleanup
     if camera is not None:

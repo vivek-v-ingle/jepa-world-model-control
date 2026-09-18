@@ -42,9 +42,8 @@ wandb/
 logs/
 *.csv
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-.DS_Store
+# Media & Artifacts
+*.mp4
+*.avi
+artifacts/
+scratch/

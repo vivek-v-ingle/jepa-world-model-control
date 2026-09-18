@@ -46,9 +46,9 @@ loss:
   auto_steps: 1
 
 planner:
-  l1_threshold: 0.73
-  min_subgoal_steps: 3
-  max_subgoal_steps: 8
+  l1_threshold: 0.81
+  min_subgoal_steps: 2
+  max_subgoal_steps: 4
   queue_horizon: 4
   max_steps: 120
   abs_gripper: true

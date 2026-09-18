@@ -65,9 +65,9 @@ class AdaptiveGoalTracker:
 
     def __init__(
         self,
-        l1_threshold: float = 0.73,
+        l1_threshold: float = 0.775,
         queue_horizon: int = 4,
-        min_subgoal_steps: int = 3,
+        min_subgoal_steps: int = 2,
         max_subgoal_steps: int = 8,
     ):
         self.l1_threshold = l1_threshold
@@ -77,17 +77,17 @@ class AdaptiveGoalTracker:
         self.prev_goal: Optional[torch.Tensor] = None
         self.step_count = 0
 
-    def should_advance(self, current_latent: torch.Tensor) -> Tuple[bool, float]:
+    def should_advance(self, current_latent: torch.Tensor) -> Tuple[bool, float, str]:
         """
         Calculates L1 distance between latest observation and active goal.
         Returns:
-            (advance_flag, min_l1_dist)
+            (advance_flag, min_l1_dist, reason_string)
         """
         current_rep = current_latent.detach()
         self.obs_buffer.append(current_rep)
 
         if self.prev_goal is None or len(self.obs_buffer) == 0:
-            return False, 0.0
+            return False, 1.0, "initial_frame"
 
         # Calculate L1 distance to goal across recent buffer
         dists = [
@@ -97,15 +97,19 @@ class AdaptiveGoalTracker:
         min_dist = float(min(dists))
         self.step_count += 1
 
-        # Must execute at least min_subgoal_steps before threshold-advancing
-        advance = (self.step_count >= self.min_subgoal_steps and min_dist < self.l1_threshold) or (
-            self.step_count >= self.max_subgoal_steps
-        )
-        if advance:
+        # Check threshold condition after min_subgoal_steps
+        if self.step_count >= self.min_subgoal_steps and min_dist < self.l1_threshold:
             self.obs_buffer.clear()
             self.step_count = 0
+            return True, min_dist, "threshold_reached"
 
-        return advance, min_dist
+        # Check maximum dwell timeout fallback
+        if self.step_count >= self.max_subgoal_steps:
+            self.obs_buffer.clear()
+            self.step_count = 0
+            return True, min_dist, "max_dwell_reached"
+
+        return False, min_dist, f"dwell_{self.step_count}/{self.max_subgoal_steps}"
 
     def set_active_goal(self, goal: torch.Tensor):
         self.prev_goal = goal.detach()

@@ -83,6 +83,8 @@ class FairinoDriver(BaseRobot):
         self.safe_z_mm = float(safe_z_mm)
         self.min_z_mm = float(min_z_mm)
         self.max_z_mm = float(max_z_mm)
+        self.min_x_mm = -950.0
+        self.max_x_mm = -230.0
 
         self.max_cartesian_step_mm = float(max_cartesian_step_mm)
 
@@ -515,6 +517,14 @@ class FairinoDriver(BaseRobot):
             )
             return False
 
+        if hasattr(self, "max_x_mm") and x > self.max_x_mm:
+            logger.warning(
+                "[ROBOT] Target X %.2f mm too close to base column limit %.2f mm.",
+                x,
+                self.max_x_mm,
+            )
+            return False
+
         return True
 
     # -----------------------------------------------------------------------
@@ -740,7 +750,7 @@ class FairinoDriver(BaseRobot):
 
         dx = action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
-        dz = -action[2] * pos_scale_z
+        dz = action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 

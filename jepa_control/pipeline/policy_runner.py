@@ -57,10 +57,10 @@ class JEPAPolicyRunner:
         )
 
         self.goal_tracker = AdaptiveGoalTracker(
-            l1_threshold=planner_cfg.get("l1_threshold", 0.73),
+            l1_threshold=planner_cfg.get("l1_threshold", 0.81),
             queue_horizon=planner_cfg.get("queue_horizon", 4),
-            min_subgoal_steps=planner_cfg.get("min_subgoal_steps", 3),
-            max_subgoal_steps=planner_cfg.get("max_subgoal_steps", 8),
+            min_subgoal_steps=planner_cfg.get("min_subgoal_steps", 2),
+            max_subgoal_steps=planner_cfg.get("max_subgoal_steps", 4),
         )
 
     def _init_models(self):
@@ -163,11 +163,11 @@ class JEPAPolicyRunner:
         current_robot_pose: np.ndarray,
         ref_curr_rgb: np.ndarray,
         ref_target_rgb: np.ndarray,
-    ) -> Tuple[np.ndarray, torch.Tensor, float]:
+    ) -> Tuple[np.ndarray, torch.Tensor, float, bool, str]:
         """
         Executes a single step of perception, goal inference, and CEM planning.
         Returns:
-            (action_7d, active_goal, latent_l1_dist)
+            (action_7d, active_goal, latent_l1_dist, advance, reason)
         """
         with torch.no_grad():
             # 1. Encode observations
@@ -179,16 +179,20 @@ class JEPAPolicyRunner:
             z_ref_curr = self.encode_frame(t_ref_curr)
             z_ref_target = self.encode_frame(t_ref_target)
 
-            # 2. Check adaptive goal advancement
-            advance, dist = self.goal_tracker.should_advance(z_curr)
+            # 2. Check adaptive goal advancement against previous active goal
+            advance, dist, reason = self.goal_tracker.should_advance(z_curr)
 
-            # 3. Infer latent goal if new segment
+            # 3. Infer target latent goal using Dreamer Predictor conditioned on current observation
             goal_latent = self.dreamer_predictor(
                 xt=z_curr,
                 yt=z_ref_curr,
                 yt_plus_1=z_ref_target,
             )
             self.goal_tracker.set_active_goal(goal_latent)
+
+            # If initial frame, compute immediate distance to target goal
+            if dist >= 0.99:
+                dist = F.l1_loss(goal_latent.flatten(1), z_curr.flatten(1)).item()
 
             # 4. Plan action via CEM
             pose_tensor = torch.from_numpy(current_robot_pose[:7]).unsqueeze(0).to(self.device, dtype=self.dtype)
@@ -208,4 +212,4 @@ class JEPAPolicyRunner:
             )
 
             action_np = action_tensor.detach().float().cpu().numpy()
-            return action_np, goal_latent, dist
+            return action_np, goal_latent, dist, advance, reason
