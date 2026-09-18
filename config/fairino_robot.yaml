@@ -4,7 +4,7 @@ robot:
   controller_ip: "192.168.57.2"
   tool_id: 2
   user_frame_id: 0
-  default_speed: 10.0          # MoveL velocity percentage (0-100)
+  default_speed: 25.0          # MoveL velocity percentage (0-100)
   point_step: 4                # Subsampling factor for waypoints
   start_method: "staged"       # Choices: "movel", "movej", "staged"
   safe_z_mm: 50.0

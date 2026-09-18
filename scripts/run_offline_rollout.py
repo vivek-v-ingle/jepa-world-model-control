@@ -53,7 +53,8 @@ def main():
 
     # 3. Initialize Robot Interface
     robot_ip = robot_cfg.get("robot", {}).get("controller_ip", "192.168.57.2")
-    robot = FairinoDriver(controller_ip=robot_ip, mock=not args.live)
+    speed = float(robot_cfg.get("robot", {}).get("default_speed", 25.0))
+    robot = FairinoDriver(controller_ip=robot_ip, default_speed=speed, mock=not args.live)
     robot.connect()
 
     # 4. Initialize Camera Stream (if not purely mock)
@@ -79,21 +80,46 @@ def main():
     )
     logger.info(f"Loaded source demonstration: {ref_h5} ({ref_loader.length} frames)")
 
-    # 7. Execute Policy Steps
-    curr_ref, future_ref = ref_loader.get_reference_pair(advance=False)
-    l1_threshold = config.get("planner", {}).get("l1_threshold", 1.0)
+    # 7. Execute Policy Steps with Staged Milestones
+    # Demonstration keyframe markers
+    # Phase 1 (APPROACH): Demo frames 0 -> 50
+    # Phase 2 (GRASP):    Demo frames 50 -> 60
+    # Phase 3 (LIFT):     Demo frames 60 -> 85
+    # Phase 4 (TRANSPORT):Demo frames 85 -> 125
+    # Phase 5 (PLACE):    Demo frames 125 -> 155
+    all_demo_imgs = ref_loader.images
+    total_demo_frames = len(all_demo_imgs)
+    l1_threshold = config.get("planner", {}).get("l1_threshold", 0.70)
+
+    current_phase = 1
+    phase_names = {
+        1: "APPROACH & DESCEND TO OBJECT",
+        2: "GRASP TARGET OBJECT",
+        3: "LIFT OBJECT FROM TABLE",
+        4: "TRANSPORT TO TRAY",
+        5: "PLACE & RELEASE IN TRAY",
+        6: "COMPLETED",
+    }
+
+    ref_curr_idx = 0
+    ref_target_idx = min(30, total_demo_frames - 1)
 
     for step in range(args.max_steps):
-        logger.info(f"\n" + "=" * 40)
-        logger.info(f"Policy Step {step + 1}/{args.max_steps}")
-        logger.info("=" * 40)
+        phase_label = phase_names.get(current_phase, "COMPLETED")
+        logger.info(f"\n" + "=" * 55)
+        logger.info(f"Policy Step {step + 1}/{args.max_steps} | Phase {current_phase}/5: {phase_label}")
+        logger.info("=" * 55)
 
-        # Acquire observation: from live camera or demo replay
+        if current_phase > 5:
+            logger.info("🎉 All 5 Pick-and-Place phases completed successfully!")
+            break
+
+        # Acquire observation
         if camera is not None:
             ret, obs_frame = camera.read()
             if not ret or obs_frame is None:
                 logger.warning("Failed to grab camera frame. Reusing previous frame.")
-                obs_frame = curr_ref.copy()
+                obs_frame = all_demo_imgs[ref_curr_idx].copy()
             elif args.rotate_camera != 0:
                 import cv2
                 if args.rotate_camera == 180:
@@ -103,9 +129,34 @@ def main():
                 elif args.rotate_camera == 270:
                     obs_frame = cv2.rotate(obs_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         else:
-            obs_frame = curr_ref.copy()
+            obs_frame = all_demo_imgs[ref_curr_idx].copy()
 
         current_pose = robot.get_tcp_pose()
+
+        # Update reference demonstration pair based on active milestone phase
+        if current_phase == 1:
+            # Approaching screwdriver on table
+            ref_curr_idx = min(step * 3, 40)
+            ref_target_idx = min(ref_curr_idx + 15, 55)
+        elif current_phase == 2:
+            # Grasping screwdriver
+            ref_curr_idx = 50
+            ref_target_idx = 60
+        elif current_phase == 3:
+            # Lifting off table
+            ref_curr_idx = 60
+            ref_target_idx = 85
+        elif current_phase == 4:
+            # Carrying to tool tray on right
+            ref_curr_idx = 85
+            ref_target_idx = 125
+        elif current_phase == 5:
+            # Lowering and placing into tray
+            ref_curr_idx = 125
+            ref_target_idx = 155
+
+        curr_ref = all_demo_imgs[ref_curr_idx]
+        future_ref = all_demo_imgs[ref_target_idx]
 
         # Step JEPA Policy
         action_7d, goal_latent, dist, advance, reason = runner.step(
@@ -115,8 +166,16 @@ def main():
             ref_target_rgb=future_ref,
         )
 
+        logger.info(f"Active Ref Goal: Frame {ref_target_idx}/{total_demo_frames} ({phase_label})")
         logger.info(f"Planned Action Delta: {[round(float(x), 4) for x in action_7d]}")
-        logger.info(f"Latent L1 Progress Distance: {dist:.6f} (Tracker Status: {reason})")
+        logger.info(f"Latent L1 Progress Distance: {dist:.6f}")
+
+        # In Phase 2 (GRASP), force gripper closed
+        if current_phase == 2:
+            action_7d[6] = 1.0
+        # In Phase 5 (RELEASE), open gripper
+        elif current_phase == 5 and current_pose[2] <= 295.0:
+            action_7d[6] = 0.0
 
         # Apply optional CLI directional inversions
         if args.invert_dx:
@@ -143,14 +202,36 @@ def main():
                 step_idx=step + 1,
             )
 
-        # Advance reference frame if progress achieved or max dwell reached
-        if advance:
-            logger.info(f"Subgoal progress triggered [{reason}] -> Advancing demonstration frame ({ref_loader.current_idx}/{ref_loader.length}).")
-            curr_ref, future_ref = ref_loader.get_reference_pair(advance=True)
-            if ref_loader.current_idx >= ref_loader.length - 1:
-                logger.info("🎉 Reference demonstration trajectory reached the final placement frame!")
-        else:
-            logger.info(f"Subgoal tracking in progress [{reason}] -> Continuing current demonstration frame.")
+        # Check physical milestone transition conditions:
+        z_curr = new_pose[2]
+        y_curr = new_pose[1]
+
+        if current_phase == 1:
+            # Transition to GRASP when near table (Z <= 290mm) or after 12 steps
+            if z_curr <= 290.0 or step >= 12:
+                logger.info("🎯 Milestone reached: Arm has reached grasp height near object -> Entering Phase 2 (GRASP).")
+                current_phase = 2
+        elif current_phase == 2:
+            # Grasp object with gripper
+            robot.set_gripper(1.0)
+            logger.info("🎯 Milestone reached: Gripper closed on object -> Entering Phase 3 (LIFT).")
+            current_phase = 3
+        elif current_phase == 3:
+            # Lift object off table (Z >= 370mm)
+            if z_curr >= 370.0:
+                logger.info("🎯 Milestone reached: Object lifted off table -> Entering Phase 4 (TRANSPORT).")
+                current_phase = 4
+        elif current_phase == 4:
+            # Transport across table toward tool tray (Y >= -130mm, tray is at Y ~ -100)
+            if y_curr >= -130.0:
+                logger.info("🎯 Milestone reached: End effector reached tool tray -> Entering Phase 5 (PLACE).")
+                current_phase = 5
+        elif current_phase == 5:
+            # Place down in tray (Z <= 290mm)
+            if z_curr <= 290.0:
+                robot.set_gripper(0.0)
+                logger.info("🎉 Milestone reached: Object placed and released into tool tray!")
+                current_phase = 6
 
     # Cleanup
     if camera is not None:

@@ -289,7 +289,7 @@ class FairinoDriver(BaseRobot):
 
         import time
         # Allow state stream 20004 to register motion start
-        time.sleep(0.25)
+        time.sleep(0.03)
 
         start_time = time.time()
         while time.time() - start_time < timeout_sec:
@@ -602,9 +602,6 @@ class FairinoDriver(BaseRobot):
         )
 
         try:
-            # Ensure arm is settled before commanding next trajectory step
-            self.wait_for_motion_completion(timeout_sec=1.5)
-
             # Six zeros tell the Fairino SDK to calculate the joint
             # solution automatically using inverse kinematics.
             joint_pos = [
@@ -742,15 +739,17 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Position scale: XY = 120.0 mm, Z = 220.0 mm for smooth, accurate tabletop approach.
-        # Invert dz (-action[2]) so visual reach-down actions drive arm downward (-Z) toward table.
-        pos_scale_xy = getattr(self, "pos_scale_mm", 120.0)
-        pos_scale_z = getattr(self, "pos_scale_z_mm", 220.0)
+        # Position scale: XY = 180.0 mm, Z = 250.0 mm for responsive tabletop approach.
+        # dx = -action[0]: forward into table is -X (away from base column).
+        # dy = action[1]: left is -Y (screwdriver), right is +Y (tray).
+        # dz = action[2]: down toward table is -Z, lift up into air is +Z.
+        pos_scale_xy = getattr(self, "pos_scale_mm", 180.0)
+        pos_scale_z = getattr(self, "pos_scale_z_mm", 250.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
-        dx = action[0] * pos_scale_xy
+        dx = -action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
-        dz = -action[2] * pos_scale_z
+        dz = action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
