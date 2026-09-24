@@ -21,22 +21,46 @@ from jepa_control.robot.fairino_driver import FairinoDriver
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s")
 logger = logging.getLogger("ResetHome")
 
-DEFAULT_READY_POSE = np.array([-460.78, -212.45, 257.16, 174.50, 3.79, -11.64, 0.0], dtype=np.float32)
+DEFAULT_HOME_POSE = np.array([-460.78, -212.45, 257.16, 174.50, 3.79, -11.64, 0.0], dtype=np.float32)
+ABOVE_PICK_POSE = np.array([-241.55, -797.98, 120.00, -175.05, -1.46, 0.58, 0.0], dtype=np.float32)
 
 def main():
-    parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose")
-    parser.add_argument("--z", type=float, default=257.16, help="Target Z height in mm (default: 257.16)")
+    parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose or Above Screwdriver")
+    parser.add_argument("--z", type=float, default=None, help="Target Z height in mm")
+    parser.add_argument("--pick", action="store_true", help="Reset directly above the screwdriver pick location (pre-approach)")
+    parser.add_argument("--mock", action="store_true", help="Run in mock mode without physical robot")
     args = parser.parse_args()
 
-    ready_pose = DEFAULT_READY_POSE.copy()
-    ready_pose[2] = args.z
+    if args.pick:
+        target_name = "ABOVE SCREWDRIVER (Pre-Approach)"
+        ready_pose = ABOVE_PICK_POSE.copy()
+        if not args.mock:
+            try:
+                from jepa_control.perception.camera import get_camera_stream
+                from jepa_control.perception.screwdriver_detector import compute_grounded_pick_pose
+                cam = get_camera_stream(camera_type="zed")
+                ret, frame = cam.read()
+                cam.release()
+                if ret and frame is not None:
+                    g_pose, coords = compute_grounded_pick_pose(frame)
+                    ready_pose[:6] = g_pose[:6]
+                    logger.info(f"🎯 Visually grounded screwdriver at pixel {coords} -> Pick Pose: {[round(float(x), 2) for x in ready_pose[:6]]}")
+            except Exception as exc:
+                logger.warning(f"Visual grounding fallback to nominal: {exc}")
+        if args.z is not None:
+            ready_pose[2] = args.z
+    else:
+        target_name = "HOME READY POSE (Table Center)"
+        ready_pose = DEFAULT_HOME_POSE.copy()
+        if args.z is not None:
+            ready_pose[2] = args.z
 
     logger.info("=" * 60)
-    logger.info("Moving Fairino FR10 to Tabletop Ready Pose")
+    logger.info(f"Moving Fairino FR10 to {target_name} ({'MOCK' if args.mock else 'LIVE'})")
     logger.info(f"Target Pose: {ready_pose}")
     logger.info("=" * 60)
 
-    driver = FairinoDriver(controller_ip="192.168.57.2", mock=False)
+    driver = FairinoDriver(controller_ip="192.168.57.2", mock=args.mock)
     if not driver.connect():
         logger.error("Failed to connect to Fairino robot.")
         sys.exit(1)
@@ -52,7 +76,7 @@ def main():
     logger.info("Executing MoveL to ready pose at safe speed (15%)...")
     success = driver._move_linear(ready_pose[:6], speed=15.0)
     time.sleep(1.0)
-    driver.wait_for_motion_completion(timeout_sec=10.0)
+    driver.wait_for_motion_completion(timeout_sec=25.0)
 
     final_pose = driver.get_tcp_pose()
     logger.info(f"Final TCP Pose: {[round(float(x), 2) for x in final_pose]}")

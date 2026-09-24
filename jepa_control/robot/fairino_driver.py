@@ -85,7 +85,7 @@ class FairinoDriver(BaseRobot):
         self.max_z_mm = 350.0
         self.min_x_mm = -810.0
         self.max_x_mm = -200.0
-        self.min_y_mm = -820.0
+        self.min_y_mm = -1020.0
         self.max_y_mm = 50.0
 
         self.max_cartesian_step_mm = float(max_cartesian_step_mm)
@@ -523,6 +523,7 @@ class FairinoDriver(BaseRobot):
         self,
         target_pose: np.ndarray,
         speed: Optional[float] = None,
+        timeout_sec: Optional[float] = None,
     ) -> bool:
         """
         Execute one Cartesian MoveL command.
@@ -626,7 +627,7 @@ class FairinoDriver(BaseRobot):
                 config=-1,
                 velAccParamMode=0,
                 overSpeedStrategy=0,
-                speedPercent=35,
+                speedPercent=max(35, min(80, int(move_speed))),
             )
 
             if ret == 185:
@@ -652,8 +653,46 @@ class FairinoDriver(BaseRobot):
                     config=-1,
                     velAccParamMode=0,
                     overSpeedStrategy=0,
-                    speedPercent=35,
+                    speedPercent=max(35, min(80, int(move_speed))),
                 )
+
+            if ret == 112:
+                # Code 112: ERR_TARGET_POSE_CANNOT_REACHED. Target pose hits kinematic boundary.
+                # Automatically search for nearest reachable pose by backing off X towards safe workspace center.
+                logger.warning("[ROBOT] MoveL returned error 112 (Target pose unreachable). Searching for safe reachable IK...")
+                recovered = False
+                for x_adj in np.linspace(-242.0, -320.0, 8):
+                    alt_pose = target_pose.copy()
+                    alt_pose[0] = x_adj
+                    ik_res = self.robot.GetInverseKin(0, alt_pose[:6].tolist(), -1)
+                    if ik_res[0] == 0:
+                        logger.info(f"[ROBOT] Found reachable IK at X={x_adj:.1f} mm. Executing MoveL.")
+                        ret = self.robot.MoveL(
+                            desc_pos=alt_pose[:6].tolist(),
+                            tool=self.tool_id,
+                            user=self.user_frame_id,
+                            joint_pos=joint_pos,
+                            vel=move_speed,
+                            acc=0.0,
+                            ovl=100.0,
+                            blendR=15.0,
+                            blendMode=0,
+                            exaxis_pos=[0.0, 0.0, 0.0, 0.0],
+                            search=0,
+                            offset_flag=0,
+                            offset_pos=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            oacc=100.0,
+                            config=-1,
+                            velAccParamMode=0,
+                            overSpeedStrategy=0,
+                            speedPercent=max(35, min(80, int(move_speed))),
+                        )
+                        if ret == 0:
+                            recovered = True
+                            break
+                if not recovered:
+                    logger.error("[ROBOT] Recovery failed: No reachable IK in safe search radius.")
+                    return False
 
             if ret != 0:
                 logger.error(
@@ -663,7 +702,8 @@ class FairinoDriver(BaseRobot):
                 return False
 
             # Wait for physical motion completion so next step starts cleanly
-            self.wait_for_motion_completion(timeout_sec=1.5)
+            wait_t = 1.5 if timeout_sec is None else float(timeout_sec)
+            self.wait_for_motion_completion(timeout_sec=wait_t)
             return True
 
             logger.info(
@@ -727,17 +767,17 @@ class FairinoDriver(BaseRobot):
         except Exception:
             return False
 
-        # Position scale: XY = 450.0 mm, Z = 500.0 mm for responsive tabletop approach.
-        # dx = action[0]: positive action[0] drives towards table center / screwdriver (+X relative to HOME).
-        # dy = action[1]: negative action[1] drives left (-Y) towards screwdriver.
-        # dz = -action[2]: positive visual reach drives downward (-Z) toward tabletop.
-        pos_scale_xy = getattr(self, "pos_scale_mm", 450.0)
-        pos_scale_z = getattr(self, "pos_scale_z_mm", 500.0)
+        # Position scale: XY = 1000.0 mm, Z = 1000.0 mm (actions are normalized meters from world model).
+        # dx = action[0]: positive action[0] drives forward (+X relative to base).
+        # dy = action[1]: negative action[1] drives left (-Y towards screwdriver).
+        # dz = action[2]: negative action[2] drives downward (-Z towards tabletop).
+        pos_scale_xy = getattr(self, "pos_scale_mm", 1000.0)
+        pos_scale_z = getattr(self, "pos_scale_z_mm", 1000.0)
         rot_scale = getattr(self, "rot_scale_deg", 0.0)
 
         dx = action[0] * pos_scale_xy
         dy = action[1] * pos_scale_xy
-        dz = -action[2] * pos_scale_z
+        dz = action[2] * pos_scale_z
         drx, dry, drz = action[3] * rot_scale, action[4] * rot_scale, action[5] * rot_scale
         gripper_cmd = float(action[6])
 
@@ -776,10 +816,15 @@ class FairinoDriver(BaseRobot):
         # Clamp target pose safely within workspace bounding box so motion is smooth and never frozen
         min_x = getattr(self, "min_x_mm", -810.0)
         max_x = getattr(self, "max_x_mm", -200.0)
-        min_y = getattr(self, "min_y_mm", -820.0)
+        min_y = getattr(self, "min_y_mm", -880.0)
         max_y = getattr(self, "max_y_mm", 50.0)
         min_z = self.min_z_mm
         max_z = self.max_z_mm
+
+        # Fairino FR10 base column kinematic boundary:
+        # When arm reaches forward (Y <= -600.0 mm), the physical reachable envelope requires X <= -235.0 mm.
+        if target_pose[1] <= -600.0:
+            max_x = min(max_x, -235.0)
 
         target_pose[0] = np.clip(target_pose[0], min_x, max_x)
         target_pose[1] = np.clip(target_pose[1], min_y, max_y)
@@ -853,7 +898,7 @@ class FairinoDriver(BaseRobot):
             return True
 
         try:
-            # Binary gripper state for JODELL RG: command > 0.5 -> CLOSE (90), <= 0.5 -> OPEN (50)
+            # Binary gripper state: command > 0.5 -> CLOSE (pos=0), <= 0.5 -> OPEN (pos=100)
             norm_cmd = float(np.clip(command, 0.0, 1.0))
             is_closed = bool(norm_cmd > 0.5)
 
@@ -861,7 +906,7 @@ class FairinoDriver(BaseRobot):
             if hasattr(self, "_last_gripper_state") and self._last_gripper_state == is_closed:
                 return True
 
-            pos_val = 90 if is_closed else 50
+            pos_val = 0 if is_closed else 100
 
             try:
                 # MoveGripper(index=1, pos, vel=30, force=40, maxtime=5000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)

@@ -68,3 +68,19 @@ reference:
   image_key: observations/images/camera_front
   ref_data_fps: 10
   ref_target_fps: 5
+
+dino_wm:
+  model_name: "dino_wm_droid"
+  cem_steps: 6
+  samples: 128
+  rollout: 3
+  topk: 10
+  var_scale: 0.1
+  l1_threshold: 0.70
+  invert_dx: false
+  invert_dy: false
+  invert_dz: false
+
+
+
+
