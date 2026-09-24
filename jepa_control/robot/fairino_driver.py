@@ -81,14 +81,16 @@ class FairinoDriver(BaseRobot):
         self.default_speed = float(default_speed)
 
         self.safe_z_mm = float(safe_z_mm)
-        self.min_z_mm = -45.0
+        self.min_z_mm = 78.0
         self.max_z_mm = 350.0
-        self.min_x_mm = -810.0
+        self.min_x_mm = -1050.0
         self.max_x_mm = -200.0
-        self.min_y_mm = -1020.0
+        self.min_y_mm = -1050.0
         self.max_y_mm = 50.0
 
         self.max_cartesian_step_mm = float(max_cartesian_step_mm)
+        self.close_pos = 90
+        self.open_pos = 50
 
         self.mock = bool(mock)
 
@@ -814,9 +816,9 @@ class FairinoDriver(BaseRobot):
         target_pose[5] += drz
 
         # Clamp target pose safely within workspace bounding box so motion is smooth and never frozen
-        min_x = getattr(self, "min_x_mm", -810.0)
+        min_x = getattr(self, "min_x_mm", -1050.0)
         max_x = getattr(self, "max_x_mm", -200.0)
-        min_y = getattr(self, "min_y_mm", -880.0)
+        min_y = getattr(self, "min_y_mm", -1050.0)
         max_y = getattr(self, "max_y_mm", 50.0)
         min_z = self.min_z_mm
         max_z = self.max_z_mm
@@ -906,7 +908,7 @@ class FairinoDriver(BaseRobot):
             if hasattr(self, "_last_gripper_state") and self._last_gripper_state == is_closed:
                 return True
 
-            pos_val = 0 if is_closed else 100
+            pos_val = self.close_pos if is_closed else self.open_pos
 
             try:
                 # MoveGripper(index=1, pos, vel=30, force=40, maxtime=5000, block=0, type=0, rotNum=0, rotVel=0, rotTorque=0)

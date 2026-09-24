@@ -21,20 +21,36 @@ from jepa_control.robot.fairino_driver import FairinoDriver
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s")
 logger = logging.getLogger("ResetHome")
 
-DEFAULT_HOME_POSE = np.array([-460.78, -212.45, 257.16, 174.50, 3.79, -11.64, 0.0], dtype=np.float32)
-ABOVE_PICK_POSE = np.array([-241.55, -797.98, 120.00, -175.05, -1.46, 0.58, 0.0], dtype=np.float32)
+DEFAULT_HOME_POSE = np.array([-673.08, -424.72, 174.42, 179.90, 0.86, -1.87, 0.0], dtype=np.float32)
+ABOVE_PICK_POSE = np.array([-245.69, -899.88, 140.91, -178.83, -3.37, 81.05, 0.0], dtype=np.float32)
+
+POINTS_FILE = Path("/home/fr10/fr10_ws/src/Initial commands for fairino/pick_place_points.json")
+if POINTS_FILE.exists():
+    try:
+        import json
+        _pts = json.loads(POINTS_FILE.read_text(encoding="utf-8"))
+        if "home" in _pts:
+            DEFAULT_HOME_POSE[:6] = np.array(_pts["home"][:6], dtype=np.float32)
+        if "pick" in _pts:
+            _pick = np.array(_pts["pick"][:6], dtype=np.float32)
+            _app_z = float(_pts.get("approach_z_mm", 60.0))
+            ABOVE_PICK_POSE[:6] = _pick
+            ABOVE_PICK_POSE[2] = _pick[2] + _app_z
+    except Exception as _e:
+        logger.warning(f"Could not load points from {POINTS_FILE}: {_e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose or Above Screwdriver")
+    parser = argparse.ArgumentParser(description="Reset Fairino FR10 to Tabletop Ready Pose or Above Pick Pose")
     parser.add_argument("--z", type=float, default=None, help="Target Z height in mm")
-    parser.add_argument("--pick", action="store_true", help="Reset directly above the screwdriver pick location (pre-approach)")
+    parser.add_argument("--pick", action="store_true", help="Reset directly above the pick location (pre-approach)")
+    parser.add_argument("--grounding", action="store_true", help="Perform live visual object grounding")
     parser.add_argument("--mock", action="store_true", help="Run in mock mode without physical robot")
     args = parser.parse_args()
 
     if args.pick:
-        target_name = "ABOVE SCREWDRIVER (Pre-Approach)"
+        target_name = "ABOVE TARGET OBJECT (Pre-Approach)"
         ready_pose = ABOVE_PICK_POSE.copy()
-        if not args.mock:
+        if args.grounding and not args.mock:
             try:
                 from jepa_control.perception.camera import get_camera_stream
                 from jepa_control.perception.screwdriver_detector import compute_grounded_pick_pose
@@ -42,9 +58,17 @@ def main():
                 ret, frame = cam.read()
                 cam.release()
                 if ret and frame is not None:
-                    g_pose, coords = compute_grounded_pick_pose(frame)
-                    ready_pose[:6] = g_pose[:6]
-                    logger.info(f"🎯 Visually grounded screwdriver at pixel {coords} -> Pick Pose: {[round(float(x), 2) for x in ready_pose[:6]]}")
+                    g_pose, coords = compute_grounded_pick_pose(
+                        frame,
+                        nominal_x=float(ABOVE_PICK_POSE[0]),
+                        nominal_y=float(ABOVE_PICK_POSE[1]),
+                        z_height=float(ABOVE_PICK_POSE[2]),
+                    )
+                    if coords is not None:
+                        ready_pose[:6] = g_pose[:6]
+                        logger.info(f"🎯 Visually grounded object at pixel {coords} -> Pick Pose: {[round(float(x), 2) for x in ready_pose[:6]]}")
+                    else:
+                        logger.info(f"ℹ️ Visual detector found no object; using taught waypoint: {[round(float(x), 2) for x in ready_pose[:6]]}")
             except Exception as exc:
                 logger.warning(f"Visual grounding fallback to nominal: {exc}")
         if args.z is not None:

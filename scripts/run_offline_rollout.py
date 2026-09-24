@@ -155,16 +155,25 @@ def main():
     ref_curr_idx = 0
     ref_target_idx = min(30, total_demo_frames - 1)
 
-    # Dynamic target place coordinates (loads user's saved points if present)
-    target_place_xy = (-380.0, -180.0)
+    # Dynamic target coordinates (loads user's saved points if present)
+    target_pick_z = 80.91
+    target_place_xy = (-947.8, -233.1)
+    target_place_z = 83.30
+    target_lift_z = 140.0
+
     points_path = Path("/home/fr10/fr10_ws/src/Initial commands for fairino/pick_place_points.json")
     if points_path.exists():
         try:
             import json
             pts = json.loads(points_path.read_text(encoding="utf-8"))
+            if "pick" in pts:
+                target_pick_z = float(pts["pick"][2])
             if "place" in pts:
                 target_place_xy = (float(pts["place"][0]), float(pts["place"][1]))
-                logger.info(f"Loaded dynamic place target from pick_place_points.json: X={target_place_xy[0]:.1f}, Y={target_place_xy[1]:.1f}")
+                target_place_z = float(pts["place"][2])
+            app_z = float(pts.get("approach_z_mm", 60.0))
+            target_lift_z = target_pick_z + app_z
+            logger.info(f"Loaded points from {points_path.name}: Pick Z={target_pick_z:.1f}mm, Place XY=({target_place_xy[0]:.1f}, {target_place_xy[1]:.1f}), Lift Z={target_lift_z:.1f}mm")
         except Exception as exc:
             logger.warning(f"Could not read pick_place_points.json: {exc}")
 
@@ -286,17 +295,17 @@ def main():
             dy_tray = np.clip((target_place_xy[1] - current_pose[1]) * 0.001, -0.04, 0.05)
             action_7d[0] = float(dx_tray)
             action_7d[1] = float(dy_tray)
-            if current_pose[2] < 125.0:
+            if current_pose[2] < target_lift_z - 15.0:
                 action_7d[2] = 0.02
             else:
                 action_7d[2] = 0.0
 
-        # In Phase 5 (RELEASE), lower into tray and open gripper
+        # In Phase 5 (RELEASE), lower to place position and open gripper
         elif current_phase == 5:
             action_7d[0] = 0.0
             action_7d[1] = 0.0
             action_7d[2] = -0.025
-            if current_pose[2] <= 55.0 or phase_step_count >= 3:
+            if current_pose[2] <= target_place_z + 4.0 or phase_step_count >= 3:
                 action_7d[6] = 0.0
 
         # Coordinate frame alignment between camera/DROID model and Fairino base
@@ -340,10 +349,10 @@ def main():
         phase_step_count += 1
 
         if current_phase == 1:
-            # Transition to GRASP when near screwdriver (Z <= 22mm, or descent timeout)
-            reached_screwdriver = (z_curr <= 22.0 and phase_step_count >= 2)
-            if reached_screwdriver or phase_step_count >= 15:
-                logger.info(f"🎯 Milestone reached: Arm at screwdriver grasp pose (X={x_curr:.1f}, Y={y_curr:.1f}, Z={z_curr:.1f}mm) -> Entering Phase 2 (GRASP).")
+            # Transition to GRASP when near object (Z <= target_pick_z + 4mm, or descent timeout)
+            reached_target = (z_curr <= target_pick_z + 4.0 and phase_step_count >= 2)
+            if reached_target or phase_step_count >= 15:
+                logger.info(f"🎯 Milestone reached: Arm at grasp pose (X={x_curr:.1f}, Y={y_curr:.1f}, Z={z_curr:.1f}mm) -> Entering Phase 2 (GRASP).")
                 current_phase = 2
                 phase_step_count = 0
         elif current_phase == 2:
@@ -355,8 +364,8 @@ def main():
                 current_phase = 3
                 phase_step_count = 0
         elif current_phase == 3:
-            # Lift object off table (Z >= 120mm or after 5 lift steps)
-            if (z_curr >= 120.0 and phase_step_count >= 2) or phase_step_count >= 5:
+            # Lift object off table (Z >= target_lift_z - 10mm or after 5 lift steps)
+            if (z_curr >= target_lift_z - 10.0 and phase_step_count >= 2) or phase_step_count >= 5:
                 logger.info(f"🎯 Milestone reached: Object lifted off table (Z={z_curr:.1f}mm) -> Entering Phase 4 (TRANSPORT).")
                 current_phase = 4
                 phase_step_count = 0
@@ -369,11 +378,11 @@ def main():
                 current_phase = 5
                 phase_step_count = 0
         elif current_phase == 5:
-            # Place down in tray (Z <= 50mm or after 6 placement steps)
-            if z_curr <= 50.0 or phase_step_count >= 6:
+            # Place down at target (Z <= target_place_z + 4mm or after 6 placement steps)
+            if z_curr <= target_place_z + 4.0 or phase_step_count >= 6:
                 robot.set_gripper(0.0)
                 time.sleep(1.0)
-                logger.info("🎉 Milestone reached: Object placed and released into tool tray!")
+                logger.info("🎉 Milestone reached: Object placed and released!")
                 current_phase = 6
                 phase_step_count = 0
 
