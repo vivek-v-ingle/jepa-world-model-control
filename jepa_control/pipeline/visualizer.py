@@ -34,6 +34,8 @@ class PolicyVisualizer:
         l1_threshold: float,
         current_tcp_pose: np.ndarray,
         step_idx: int,
+        prediction_error: Optional[float] = None,
+        retarget_info: Optional[dict] = None,
     ) -> np.ndarray:
         """
         Builds a 3-panel dashboard:
@@ -55,24 +57,46 @@ class PolicyVisualizer:
         cv2.putText(p2_bgr, f"Step: {step_idx}", (10, S - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
         # 3. Prepare Telemetry Panel
-        p3_bgr = np.zeros((S, S, 3), dtype=np.uint8) + 30 # Dark background
-        cv2.putText(p3_bgr, "JEPA TELEMETRY", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2)
+        p3_bgr = np.zeros((S, S, 3), dtype=np.uint8) + 25  # Dark sleek background
+        cv2.putText(p3_bgr, "JEPA TELEMETRY", (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 220, 255), 2)
 
         # Latent distance bar
         progress = max(0.0, min(1.0, 1.0 - (latent_l1_dist / max(l1_threshold, 1e-4))))
         bar_color = (0, 255, 0) if latent_l1_dist < l1_threshold else (0, 165, 255)
-        cv2.putText(p3_bgr, f"Latent L1 Dist: {latent_l1_dist:.4f}", (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
-        cv2.rectangle(p3_bgr, (10, 75), (S - 10, 95), (60, 60, 60), -1)
-        cv2.rectangle(p3_bgr, (10, 75), (10 + int((S - 20) * progress), 95), bar_color, -1)
-        cv2.putText(p3_bgr, f"Threshold: {l1_threshold:.2f}", (10, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1)
+        cv2.putText(p3_bgr, f"Latent L1 Dist: {latent_l1_dist:.4f}", (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (220, 220, 220), 1)
+        cv2.rectangle(p3_bgr, (10, 56), (S - 10, 72), (55, 55, 55), -1)
+        cv2.rectangle(p3_bgr, (10, 56), (10 + int((S - 20) * progress), 72), bar_color, -1)
+
+        # World Model 1-Step Prediction Error
+        if prediction_error is not None:
+            err_color = (0, 255, 0) if prediction_error < 0.15 else ((0, 255, 255) if prediction_error < 0.35 else (0, 140, 255))
+            cv2.putText(p3_bgr, f"WM Pred Error: {prediction_error:.4f}", (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.42, err_color, 1)
+        else:
+            cv2.putText(p3_bgr, "WM Pred Error: Initializing", (10, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (160, 160, 160), 1)
+
+        # DINOv2 Latent Patch Attention Metrics
+        if retarget_info:
+            sim_val = retarget_info.get("cosine_similarity", 0.0)
+            dr, dc = retarget_info.get("patch_delta", (0, 0))
+            cv2.putText(
+                p3_bgr,
+                f"Patch Attn: Sim={sim_val:.3f} | d=({dr:+d},{dc:+d})",
+                (10, 112),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.38,
+                (200, 220, 100),
+                1,
+            )
+
+        cv2.line(p3_bgr, (10, 122), (S - 10, 122), (60, 60, 60), 1)
 
         # Planned 7-DoF action
-        cv2.putText(p3_bgr, "Planned Action (CEM):", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+        cv2.putText(p3_bgr, "Planned Action (CEM):", (10, 142), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
         labels = ["dX (mm)", "dY (mm)", "dZ (mm)", "dRx", "dRy", "dRz", "Gripper"]
         for idx, (lbl, val) in enumerate(zip(labels, action_7d)):
-            val_str = f"{val * 1000:.1f}" if idx < 3 else f"{val:.3f}"
-            y_pos = 175 + idx * 22
-            cv2.putText(p3_bgr, f"{lbl:>8}: {val_str}", (15, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (240, 240, 240), 1)
+            val_str = f"{val * 1000:+.1f}" if idx < 3 else f"{val:+.3f}"
+            y_pos = 164 + idx * 20
+            cv2.putText(p3_bgr, f"{lbl:>8}: {val_str}", (15, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (240, 240, 240), 1)
 
         # Combine panels side by side [S, 3*S, 3]
         combined = np.hstack([p1_bgr, p2_bgr, p3_bgr])

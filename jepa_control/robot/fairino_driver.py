@@ -81,7 +81,7 @@ class FairinoDriver(BaseRobot):
         self.default_speed = float(default_speed)
 
         self.safe_z_mm = float(safe_z_mm)
-        self.min_z_mm = 78.0
+        self.min_z_mm = 80.5  # Safe space floor: prevents crushing bottle (pick Z=80.9mm)
         self.max_z_mm = 350.0
         self.min_x_mm = -1050.0
         self.max_x_mm = -200.0

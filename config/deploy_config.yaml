@@ -72,11 +72,15 @@ reference:
 dino_wm:
   model_name: "dino_wm_droid"
   cem_steps: 6
-  samples: 128
+  samples: 96
   rollout: 3
-  topk: 10
+  topk: 8
   var_scale: 0.1
   l1_threshold: 0.70
+  nominal_bottle_patch: [8, 9]
+  patch_temp: 0.05
+  feature_centering: true
+  retarget_goal: true
   invert_dx: false
   invert_dy: false
   invert_dz: false

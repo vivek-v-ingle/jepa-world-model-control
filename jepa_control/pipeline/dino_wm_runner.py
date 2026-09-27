@@ -76,7 +76,31 @@ class DinoWMRunner:
         self.step_count = 0
         self.active_goal_latent = None
         self.current_latent = None
-        logger.info(f"DinoWMRunner initialized (CEM: iter={self.iterations}, samples={self.num_samples}, horizon={self.horizon}, var_scale={self.var_scale})")
+        self.last_predicted_latent: Optional[torch.Tensor] = None
+        self.last_prediction_error: Optional[float] = None
+        self.last_retarget_info: Dict[str, Any] = {}
+
+        # 3. Initialize DINOv2 Latent Patch Attention Retargeter
+        from jepa_control.planner.latent_patch_attention import DinoLatentPatchAttention
+        nominal_cfg = dino_cfg.get("nominal_bottle_patch", "auto")
+        if isinstance(nominal_cfg, (list, tuple)):
+            nominal_patch = tuple(nominal_cfg)
+        else:
+            nominal_patch = "auto"
+        patch_temp = float(dino_cfg.get("patch_temp", 0.05))
+        use_centering = dino_cfg.get("feature_centering", True)
+
+        self.retargeter = DinoLatentPatchAttention(
+            nominal_bottle_patch=nominal_patch,
+            temperature=patch_temp,
+            use_feature_centering=use_centering,
+            device=self.device,
+        )
+
+        logger.info(
+            f"DinoWMRunner initialized (CEM: iter={self.iterations}, samples={self.num_samples}, "
+            f"horizon={self.horizon}, var_scale={self.var_scale} | Retargeter: nominal={nominal_patch})"
+        )
 
     def preprocess_image(self, img_bgr: np.ndarray) -> torch.Tensor:
         """
@@ -109,17 +133,31 @@ class DinoWMRunner:
         with torch.no_grad():
             return self.model.encode(img_tensor)
 
+    def predict_next_latent(self, z_curr: torch.Tensor, action_7d: np.ndarray) -> torch.Tensor:
+        """
+        Autoregressively predicts next latent state using ViTPredictor unroll:
+        \\hat{z}_{t+1} = WorldModel(z_t, a_t)
+        Returns:
+            \\hat{z}_{t+1}: [1, 1, 1, 16, 16, 384]
+        """
+        with torch.no_grad():
+            act_tensor = torch.from_numpy(action_7d).float().to(self.device).view(1, 1, 7)
+            pred_seq = self.model.unroll(z_curr, act_tensor)
+            return pred_seq[1:2]
+
     def step(
         self,
         current_obs_rgb: np.ndarray,
         current_robot_pose: np.ndarray,
         ref_curr_rgb: np.ndarray,
         ref_target_rgb: np.ndarray,
-    ) -> Tuple[np.ndarray, torch.Tensor, float, bool, str]:
+        retarget_goal: bool = True,
+        return_info: bool = False,
+    ) -> Tuple[Any, ...]:
         """
-        Executes a single closed-loop perception and visual planning step.
+        Executes a single closed-loop perception, prediction verification, and visual planning step.
         Returns:
-            (action_7d, active_goal_latent, latent_l1_dist, advance, reason)
+            (action_7d, active_goal_latent, latent_l1_dist, advance, reason [, retarget_info])
         """
         self.step_count += 1
         
@@ -128,26 +166,64 @@ class DinoWMRunner:
             t_curr = self.preprocess_image(current_obs_rgb)
             t_goal = self.preprocess_image(ref_target_rgb)
 
-            z_curr = self.encode_frame(t_curr) # [1, 1, 1, 16, 16, 384]
-            z_goal = self.encode_frame(t_goal) # [1, 1, 1, 16, 16, 384]
+            z_curr = self.encode_frame(t_curr)  # [1, 1, 1, 16, 16, 384]
+            z_goal = self.encode_frame(t_goal)  # [1, 1, 1, 16, 16, 384]
             self.current_latent = z_curr
-            self.active_goal_latent = z_goal
 
-            # 2. Compute latent L1 distance to reference goal
-            # DINOv2 representations yield sharp spatial gradients on physical targets
-            target_enc = z_goal[:, 0] # [1, 1, 16, 16, 384]
+            # 2. Evaluate World Model 1-Step Prediction Error: ||\\hat{z}_t - z_t||_1
+            pred_error = None
+            if self.last_predicted_latent is not None:
+                pred_error = torch.mean(torch.abs(self.last_predicted_latent - z_curr)).item()
+                self.last_prediction_error = pred_error
+                logger.info(
+                    f"🔮 [WORLD MODEL] Prediction Error (Step {self.step_count - 1} -> {self.step_count}): "
+                    f"||\\hat{{z}}_t - z_t||_1 = {pred_error:.6f}"
+                )
+
+            # 3. Ensure reference bottle token is anchored to demonstration
+            if self.retargeter.ref_bottle_token is None:
+                t_ref_0 = self.preprocess_image(ref_curr_rgb)
+                z_ref_0 = self.encode_frame(t_ref_0)
+                self.retargeter.initialize_reference(z_ref_0, z_live=z_curr)
+
+            # 4. Spatially retarget goal latent via DINOv2 Latent Patch Attention
+            if retarget_goal:
+                z_target, retarget_info = self.retargeter.retarget_goal_latent(z_goal, z_curr)
+            else:
+                z_target = z_goal
+                sim_map, (live_r, live_c), max_sim = self.retargeter.compute_similarity_map(z_curr)
+                retarget_info = {
+                    "ref_bottle_patch": self.retargeter.ref_patch_coords,
+                    "live_bottle_patch": (live_r, live_c),
+                    "patch_delta": (live_r - self.retargeter.ref_patch_coords[0], live_c - self.retargeter.ref_patch_coords[1]),
+                    "cosine_similarity": float(max_sim),
+                    "sim_map": sim_map.detach().cpu().numpy(),
+                }
+
+            retarget_info["prediction_error"] = pred_error
+            self.last_retarget_info = retarget_info
+            self.active_goal_latent = z_target
+
+            # 5. Compute latent L1 distance to retargeted goal
+            target_enc = z_target[:, 0]  # [1, 1, 16, 16, 384]
             dist = torch.mean(torch.abs(z_curr[:, 0] - target_enc)).item()
 
-            # 3. Formulate MPC Objective (L2 representation distance matching DROID training)
+            # 6. Formulate MPC Objective (L2 representation distance matching DROID training)
             from evals.simu_env_planning.planning.planning.objectives import ReprTargetDistMPCObjective
             objective = ReprTargetDistMPCObjective(cfg={}, target_enc=target_enc, sum_all_diffs=False)
             self.planner.set_objective(objective)
 
-            # 4. Plan optimal action trajectory with CEM
+            # 7. Plan optimal action trajectory with CEM
             res = self.planner.plan(z_curr)
             planned_action = res.actions[0].cpu().numpy().copy()
 
-            advance = dist <= self.l1_threshold
-            reason = f"L1={dist:.4f} (thresh={self.l1_threshold:.2f})"
+            # 8. Record World Model 1-step prediction \\hat{z}_{t+1} for next step verification
+            self.last_predicted_latent = self.predict_next_latent(z_curr, planned_action)
 
-            return planned_action, z_goal, dist, advance, reason
+            advance = dist <= self.l1_threshold
+            err_str = f" | WMErr={pred_error:.4f}" if pred_error is not None else ""
+            reason = f"L1={dist:.4f} (thresh={self.l1_threshold:.2f}){err_str}"
+
+            if return_info:
+                return planned_action, z_target, dist, advance, reason, retarget_info
+            return planned_action, z_target, dist, advance, reason
